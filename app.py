@@ -18,20 +18,20 @@ Notes:
  - To enable Cerebras fallback for LLM-based summaries, set CEREBRAS_API_KEY in `.env`.
 """
 
-import os
 import io
-import time
 import json
+import os
 import tempfile
+import time
 from datetime import datetime
-from typing import List, Dict, Any
-
-import streamlit as st
-import streamlit.components.v1 as components
+from typing import Any, Dict, List
 
 # Visualization / data libs
 import pandas as pd
 import plotly.express as px
+import streamlit as st
+import streamlit.components.v1 as components
+
 # Optional heavy import used for filtering and GEXF export in the interactive dashboard.
 # Wrapped in a try/except so the app can still run when networkx isn't available.
 try:
@@ -45,6 +45,7 @@ from bibliometrics import analyze_field, compute_author_metrics, visualize_pyvis
 # Optional: LLM summarization via kubectl Groq/Cerebras fallback (bibliometric_crawler)
 try:
     from bibliometric_crawler import BibliometricCrawler
+
     LLM_AVAILABLE = True
 except Exception:
     BibliometricCrawler = None
@@ -103,7 +104,9 @@ def display_time_series(time_series: Dict[int, int], forecast: Dict[str, Any]):
                 fc_rows.append({"year": int(y), "predicted": float(val)})
         if fc_rows:
             df_fc = pd.DataFrame(fc_rows).sort_values("year")
-            fig2 = px.line(df_fc, x="year", y="predicted", title="Forecast (next years)")
+            fig2 = px.line(
+                df_fc, x="year", y="predicted", title="Forecast (next years)"
+            )
             # also show history points
             st.plotly_chart(fig2, use_container_width=True)
             st.dataframe(df_fc)
@@ -134,7 +137,7 @@ def summarize_with_llm(query: str, result_summary: Dict[str, Any]) -> str:
         }
         for a in top_authors
     ]
-    msg = f\"\"\"Given the following bibliometric analysis for query: \"{query}\":
+    msg = f"""Given the following bibliometric analysis for query: "{query}":
 
 Top authors:
 {json.dumps(top_authors_text, indent=2)}
@@ -143,12 +146,15 @@ Provide a concise natural-language summary (3-5 sentences) describing:
 - The main research trends visible
 - The top author(s) and why they are influential (metrics referenced)
 - Any notable changes in publication volume over time
-Return a brief paragraph summary.\"\"\"
+Return a brief paragraph summary."""
 
-    system_prompt = \"You are a bibliometric analyst. Summarize the data succinctly.\"
+    system_prompt = "You are a bibliometric analyst. Summarize the data succinctly."
     try:
         response = bc.groq_client.chat.completions.create(
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": msg}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": msg},
+            ],
             model=bc.groq_model,
             temperature=0.3,
             max_tokens=250,
@@ -158,14 +164,19 @@ Return a brief paragraph summary.\"\"\"
     except Exception as e:
         # Try Cerebras fallback if available (BibliometricCrawler also handles fallback on analyze path,
         # but for direct calls we surface an explanatory error)
-        return f\"LLM request failed: {e}\"
+        return f"LLM request failed: {e}"
 
 
-def run_analysis_and_render(query: str, sources: List[str], max_results: int, out_dir: str):
+def run_analysis_and_render(
+    query: str, sources: List[str], max_results: int, out_dir: str
+):
     st.info("Starting analysis. This may take a few minutes for large queries.")
     with st.spinner("Collecting publications and analyzing..."):
         result = analyze_field(
-            query, max_results_per_source=max_results, sources=sources, output_dir=out_dir
+            query,
+            max_results_per_source=max_results,
+            sources=sources,
+            output_dir=out_dir,
         )
 
     # Display summary metrics
@@ -203,9 +214,13 @@ def run_analysis_and_render(query: str, sources: List[str], max_results: int, ou
             components.html(html, height=400, scrolling=True)
         except Exception as e:
             st.warning(f"Could not load pre-generated visualization: {e}")
-        st.markdown("You can also interactively filter and re-generate a network below for exploration.")
+        st.markdown(
+            "You can also interactively filter and re-generate a network below for exploration."
+        )
     else:
-        st.info("No pre-generated pyvis visualization available. Use the controls below to generate one interactively (requires `pyvis` and optionally `fa2`).")
+        st.info(
+            "No pre-generated pyvis visualization available. Use the controls below to generate one interactively (requires `pyvis` and optionally `fa2`)."
+        )
 
     # ---- Interactive exploration controls ----
     st.markdown("**Interactive exploration**")
@@ -215,19 +230,31 @@ def run_analysis_and_render(query: str, sources: List[str], max_results: int, ou
     max_n_pubs = 1
     if graph is not None:
         try:
-            max_n_pubs = max((int(d.get("n_pubs", 0) or 0) for _, d in graph.nodes(data=True)), default=1)
+            max_n_pubs = max(
+                (int(d.get("n_pubs", 0) or 0) for _, d in graph.nodes(data=True)),
+                default=1,
+            )
             max_n_pubs = max(1, max_n_pubs)
         except Exception:
             max_n_pubs = 1
 
     with left_col:
-        min_pubs = st.slider("Minimum publications per author", min_value=1, max_value=max_n_pubs, value=1)
+        min_pubs = st.slider(
+            "Minimum publications per author",
+            min_value=1,
+            max_value=max_n_pubs,
+            value=1,
+        )
         author_search = st.text_input("Author name contains (filter)", value="")
 
     with right_col:
         layout_choice = st.selectbox(
             "Layout method",
-            options=["Auto (fa2 if available)", "ForceAtlas2 (fa2)", "Spring (networkx)"],
+            options=[
+                "Auto (fa2 if available)",
+                "ForceAtlas2 (fa2)",
+                "Spring (networkx)",
+            ],
             index=0,
         )
         layout_map = {
@@ -235,8 +262,12 @@ def run_analysis_and_render(query: str, sources: List[str], max_results: int, ou
             "ForceAtlas2 (fa2)": "fa2",
             "Spring (networkx)": "spring",
         }
-        fa2_iters = st.slider("ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10)
-        spring_iters = st.slider("Spring layout iterations", min_value=10, max_value=1000, value=50, step=10)
+        fa2_iters = st.slider(
+            "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10
+        )
+        spring_iters = st.slider(
+            "Spring layout iterations", min_value=10, max_value=1000, value=50, step=10
+        )
         force_regen = st.checkbox("Always regenerate (ignore cached HTML)", value=False)
 
     def _filter_graph(G, min_pubs=1, author_query=None):
@@ -244,9 +275,15 @@ def run_analysis_and_render(query: str, sources: List[str], max_results: int, ou
         if G is None:
             return None
         if nx is None:
-            raise RuntimeError("networkx is required for interactive graph filtering (install `networkx`).")
+            raise RuntimeError(
+                "networkx is required for interactive graph filtering (install `networkx`)."
+            )
         Gf = G.copy()
-        q = author_query.strip().lower() if (author_query and author_query.strip()) else None
+        q = (
+            author_query.strip().lower()
+            if (author_query and author_query.strip())
+            else None
+        )
         remove = []
         for n, data in Gf.nodes(data=True):
             try:
@@ -271,7 +308,15 @@ def run_analysis_and_render(query: str, sources: List[str], max_results: int, ou
             pass
         return Gf
 
-    def _generate_and_write(Gf, fname_html, fname_gexf, layout, fa2_iterations, spring_iterations, force=False):
+    def _generate_and_write(
+        Gf,
+        fname_html,
+        fname_gexf,
+        layout,
+        fa2_iterations,
+        spring_iterations,
+        force=False,
+    ):
         """Write a GEXF and generate a pyvis HTML (cached by filename)."""
         os.makedirs(out_dir, exist_ok=True)
         # Write GEXF (for download) where possible
@@ -279,7 +324,7 @@ def run_analysis_and_render(query: str, sources: List[str], max_results: int, ou
             if Gf is not None:
                 nx.write_gexf(Gf, fname_gexf)
         except Exception as e:
-            st.warning(f\"Could not write GEXF: {e}\")
+            st.warning(f"Could not write GEXF: {e}")
         # Generate HTML if needed (or forced)
         need_gen = force or not os.path.exists(fname_html)
         if need_gen:
@@ -288,37 +333,44 @@ def run_analysis_and_render(query: str, sources: List[str], max_results: int, ou
                     Gf,
                     fname_html,
                     notebook=False,
-                    height=\"800px\",
-                    width=\"100%\",\n                    layout=layout,
+                    height="800px",
+                    width="100%",
+                    layout=layout,
                     fa2_iterations=fa2_iterations,
                     spring_iterations=spring_iterations,
                     seed=42,
                 )
             except Exception as e:
-                st.error(f\"Failed to generate visualization: {e}\")
+                st.error(f"Failed to generate visualization: {e}")
                 return None
         return fname_html
 
     # Button to (re)generate the interactive network
-    if st.button(\"Generate interactive network\"):
+    if st.button("Generate interactive network"):
         if graph is None:
-            st.error(\"Graph not available in results. Make sure the analysis completed successfully and pyvis was available.\")
+            st.error(
+                "Graph not available in results. Make sure the analysis completed successfully and pyvis was available."
+            )
         else:
             try:
-                filtered = _filter_graph(graph, min_pubs=min_pubs, author_query=author_search)
+                filtered = _filter_graph(
+                    graph, min_pubs=min_pubs, author_query=author_search
+                )
             except Exception as e:
                 st.error(str(e))
                 filtered = None
 
             if filtered is None or filtered.number_of_nodes() == 0:
-                st.warning(\"No nodes remain after filtering. Try reducing the minimum publications threshold or changing your filters.\")
+                st.warning(
+                    "No nodes remain after filtering. Try reducing the minimum publications threshold or changing your filters."
+                )
             else:
                 safe_base = safe_filename(query)
                 html_name = os.path.join(
                     out_dir,
-                    f\"{safe_base}_interactive_{layout_map[layout_choice]}_minpubs-{min_pubs}_fa2iter-{fa2_iters}_spriter-{spring_iters}.html\",
+                    f"{safe_base}_interactive_{layout_map[layout_choice]}_minpubs-{min_pubs}_fa2iter-{fa2_iters}_spriter-{spring_iters}.html",
                 )
-                gexf_name = os.path.join(out_dir, f\"{safe_base}_interactive.gexf\")
+                gexf_name = os.path.join(out_dir, f"{safe_base}_interactive.gexf")
 
                 # generate (uses cached HTML if present unless force_regen)
                 written_html = _generate_and_write(
@@ -332,25 +384,31 @@ def run_analysis_and_render(query: str, sources: List[str], max_results: int, ou
                 )
 
                 if written_html and os.path.exists(written_html):
-                    with open(written_html, \"r\", encoding=\"utf-8\") as fh:
+                    with open(written_html, "r", encoding="utf-8") as fh:
                         html = fh.read()
                     components.html(html, height=800, scrolling=True)
                     # Offer filtered GEXF for download if available
                     try:
-                        with open(gexf_name, \"rb\") as fh:
-                            st.download_button(\"Download filtered GEXF\", fh.read(), file_name=os.path.basename(gexf_name))
+                        with open(gexf_name, "rb") as fh:
+                            st.download_button(
+                                "Download filtered GEXF",
+                                fh.read(),
+                                file_name=os.path.basename(gexf_name),
+                            )
                     except Exception:
                         pass
                     st.success(
-                        f\"Rendered interactive network (nodes: {filtered.number_of_nodes()}, edges: {filtered.number_of_edges()})\"
+                        f"Rendered interactive network (nodes: {filtered.number_of_nodes()}, edges: {filtered.number_of_edges()})"
                     )
                 else:
-                    st.error(\"Failed to generate the interactive visualization. Check logs for details.\")
+                    st.error(
+                        "Failed to generate the interactive visualization. Check logs for details."
+                    )
 
     # LLM summary
-    st.subheader(\"LLM summary\")
-    if st.button(\"Generate natural-language summary (LLM)\"):
-        with st.spinner(\"Generating summary (LLM)...\"):
+    st.subheader("LLM summary")
+    if st.button("Generate natural-language summary (LLM)"):
+        with st.spinner("Generating summary (LLM)..."):
             summary_text = summarize_with_llm(query, result)
             st.write(summary_text)
 
@@ -360,8 +418,12 @@ def main():
     st.title("Simple Bibliometric Explorer")
     st.sidebar.header("Query configuration")
 
-    query = st.sidebar.text_input("Search query", value="machine learning in healthcare")
-    max_results = st.sidebar.slider("Max results per source", min_value=10, max_value=2000, value=200, step=10)
+    query = st.sidebar.text_input(
+        "Search query", value="machine learning in healthcare"
+    )
+    max_results = st.sidebar.slider(
+        "Max results per source", min_value=10, max_value=2000, value=200, step=10
+    )
     # default sources
     all_sources = [
         "pubmed",
@@ -375,7 +437,11 @@ def main():
         "ieee",
         "eric",
     ]
-    selected = st.sidebar.multiselect("Sources to search", options=all_sources, default=["pubmed", "sage", "scopus", "wos"])
+    selected = st.sidebar.multiselect(
+        "Sources to search",
+        options=all_sources,
+        default=["pubmed", "sage", "scopus", "wos"],
+    )
 
     out_root = st.sidebar.text_input("Output root directory", value="analysis_output")
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
@@ -383,9 +449,15 @@ def main():
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("Notes:")
-    st.sidebar.markdown("- For authoritative citation metrics provide SCOPUS_API_KEY and/or WOS_API_KEY in .env.")
-    st.sidebar.markdown("- Use the `inspect_groq_models.py` helper to tune the LLM model if needed.")
-    st.sidebar.markdown("- ForceAtlas2 layout requires `fa2` package (may need compilation on some platforms).")
+    st.sidebar.markdown(
+        "- For authoritative citation metrics provide SCOPUS_API_KEY and/or WOS_API_KEY in .env."
+    )
+    st.sidebar.markdown(
+        "- Use the `inspect_groq_models.py` helper to tune the LLM model if needed."
+    )
+    st.sidebar.markdown(
+        "- ForceAtlas2 layout requires `fa2` package (may need compilation on some platforms)."
+    )
 
     run = st.sidebar.button("Run analysis")
     if run:
@@ -396,7 +468,9 @@ def main():
         if "wos" in selected and not os.getenv("WOS_API_KEY"):
             missing.append("WOS_API_KEY")
         if missing:
-            st.warning(f"Selected sources include keys that are not set in environment: {missing}. Results may be incomplete.")
+            st.warning(
+                f"Selected sources include keys that are not set in environment: {missing}. Results may be incomplete."
+            )
 
         try:
             os.makedirs(out_dir, exist_ok=True)
