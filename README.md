@@ -110,6 +110,16 @@ streamlit run Simple-bibliometric/app.py
   - Click "Generate interactive network" to render an embedded pyvis visualization.
 - Download filtered GEXF files for use in Gephi or VOSviewer.
 
+- Exports & downloads:
+  - Use the "Exports" section to download the full publications list as CSV, JSON, or BibTeX.
+  - Download the top authors table as CSV (available next to the table).
+  - Export filtered graphs in GEXF format for import into Gephi / VOSviewer.
+
+- Caching & performance:
+  - Use the "Use cached search results" checkbox in the sidebar to avoid duplicate API calls for repeated queries (this reduces API usage and speeds up exploration).
+  - Set "Cache TTL (hours)" to control how long cached results are considered fresh (default: 24 hours).
+  - To clear the cache manually, delete files in the `.cache/` directory, or call `cache_utils.clear_cache()` programmatically.
+
 ### Notebook usage (optional)
 
 You can also use these utilities from a Jupyter notebook. Example:

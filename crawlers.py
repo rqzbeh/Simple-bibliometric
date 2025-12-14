@@ -4,6 +4,7 @@ Each crawler implements actual API integrations based on official documentation.
 """
 
 import os
+import random
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
@@ -55,6 +56,14 @@ class BaseCrawler(ABC):
         self.last_request_time = None
         self.requests_per_second = 3  # Conservative default
 
+        # Retry & backoff configuration (can be adjusted per-crawler instance)
+        # max_retries: number of total attempts (includes first attempt)
+        self.max_retries = 3
+        # base seconds used for exponential backoff (sleep = base * 2^(attempt-1))
+        self.retry_backoff_base = 1.0
+        # relative jitter applied to backoff (fraction in [-jitter, +jitter])
+        self.retry_backoff_jitter = 0.2
+
     @abstractmethod
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """Search the database with the given query"""
@@ -72,34 +81,84 @@ class BaseCrawler(ABC):
     def _make_request(
         self, endpoint: str, params: Dict[str, Any] = None, method: str = "GET"
     ) -> Dict[str, Any]:
-        """Make HTTP request to the API"""
+        """Make HTTP request to the API with retries and exponential backoff (with jitter).
+
+        Behavior:
+        - Applies per-instance rate limiting via self._rate_limit().
+        - Retries transient errors (network errors and 5xx responses) up to self.max_retries times.
+        - Does not retry on client errors (HTTP 4xx).
+        - Uses an exponential backoff with configurable base and jitter (self.retry_backoff_base and self.retry_backoff_jitter).
+        """
         self._rate_limit()
-        try:
-            headers = self._get_headers()
-            url = f"{self.base_url}{endpoint}"
 
-            if method == "GET":
-                response = requests.get(url, params=params, headers=headers, timeout=30)
-            else:
-                response = requests.post(url, json=params, headers=headers, timeout=30)
+        headers = self._get_headers()
+        url = f"{self.base_url}{endpoint}"
 
-            response.raise_for_status()
+        attempt = 0
+        last_exc = None
+        max_retries = getattr(self, "max_retries", 3)
+        backoff_base = getattr(self, "retry_backoff_base", 1.0)
+        jitter_factor = getattr(self, "retry_backoff_jitter", 0.1)
 
-            # Handle different response types
-            content_type = response.headers.get("Content-Type", "")
-            if "json" in content_type:
-                return response.json()
-            elif "xml" in content_type:
-                return {"xml_content": response.text}
-            else:
-                return {"content": response.text}
+        while attempt < max_retries:
+            try:
+                if method == "GET":
+                    response = requests.get(
+                        url, params=params, headers=headers, timeout=30
+                    )
+                else:
+                    response = requests.post(
+                        url, json=params, headers=headers, timeout=30
+                    )
 
-        except requests.exceptions.RequestException as e:
-            print(f"[{self.__class__.__name__}] Request error: {e}")
-            return {}
-        except Exception as e:
-            print(f"[{self.__class__.__name__}] Error: {e}")
-            return {}
+                response.raise_for_status()
+
+                # Handle different response types
+                content_type = response.headers.get("Content-Type", "")
+                if "json" in content_type:
+                    return response.json()
+                elif "xml" in content_type:
+                    return {"xml_content": response.text}
+                else:
+                    return {"content": response.text}
+
+            except requests.exceptions.HTTPError as e:
+                # For HTTP errors, check status. Do not retry on 4xx (client) errors.
+                status = None
+                try:
+                    status = e.response.status_code
+                except Exception:
+                    pass
+                if status and 400 <= status < 500:
+                    print(
+                        f"[{self.__class__.__name__}] HTTP error (status {status}): {e}"
+                    )
+                    return {}
+                last_exc = e
+            except requests.exceptions.RequestException as e:
+                # Network or connection-level errors (retryable)
+                last_exc = e
+            except Exception as e:
+                # Unexpected error (treat as retryable once)
+                last_exc = e
+
+            attempt += 1
+            if attempt >= max_retries:
+                break
+
+            # Exponential backoff with jitter
+            sleep = backoff_base * (2 ** (attempt - 1))
+            # Apply relative jitter in [-jitter_factor, +jitter_factor]
+            jitter = jitter_factor * (2 * random.random() - 1)
+            sleep = max(0.0, sleep * (1.0 + jitter))
+            time.sleep(sleep)
+
+        # All attempts exhausted
+        if last_exc:
+            print(
+                f"[{self.__class__.__name__}] Request failed after {attempt} attempts: {last_exc}"
+            )
+        return {}
 
     def _get_headers(self) -> Dict[str, str]:
         """Get headers for API requests"""

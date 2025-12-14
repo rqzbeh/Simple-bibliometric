@@ -197,6 +197,43 @@ def test_visualize_pyvis_html_generation():
         return False
 
 
+def test_cache_utils_basic():
+    """Basic tests for cache utilities (set/get/clear)."""
+    print("\nTesting cache utilities...")
+    try:
+        import cache_utils
+    except Exception as e:
+        print(f"  ⚠ cache_utils not available; skipping cache tests: {e}")
+        return True
+
+    # Ensure a clean slate
+    try:
+        cache_utils.clear_cache()
+    except Exception:
+        pass
+
+    key = cache_utils.make_cache_key("test", "cache", 1)
+    try:
+        cache_utils.set_cache(key, {"a": 1})
+        v = cache_utils.get_cache(key)
+        assert v == {"a": 1}
+        print("  ✓ cache set/get works")
+    except Exception as e:
+        print(f"  ✗ cache set/get failed: {e}")
+        return False
+
+    try:
+        cache_utils.clear_cache()
+        v2 = cache_utils.get_cache(key)
+        assert v2 is None
+        print("  ✓ cache clear works")
+    except Exception as e:
+        print(f"  ✗ cache clear failed: {e}")
+        return False
+
+    return True
+
+
 def run_all_tests():
     """Run all tests"""
     print("=" * 60)
@@ -209,6 +246,7 @@ def run_all_tests():
         test_base_crawler_methods,
         test_bibliometric_crawler_without_api,
         test_optional_package_flags,
+        test_cache_utils_basic,
         test_visualize_pyvis_html_generation,
     ]
 

@@ -19,6 +19,7 @@ Design goals:
 from __future__ import annotations
 
 import itertools
+import json
 import os
 import re
 import statistics
@@ -81,6 +82,12 @@ from crawlers import (
 
 # Type aliases
 Pub = Dict[str, Any]
+
+# Optional disk cache utilities (if present)
+try:
+    import cache_utils
+except Exception:
+    cache_utils = None
 
 
 # ---------------------------
@@ -170,14 +177,39 @@ def collect_publications(
     sources: Optional[List[str]] = None,
     max_results_per_source: int = 200,
     crawlers_to_use: Optional[Dict[str, Any]] = None,
+    use_cache: bool = True,
+    cache_ttl_hours: int = 24,
+    errors_out: Optional[List[Tuple[str, str]]] = None,
 ) -> List[Pub]:
     """
     Collect publications from the chosen sources (default: pubmed, sage).
     Each publication is a dict with canonical fields:
       - title, authors (list[str]), year, doi, abstract, citations (int), source, url
+
+    New optional parameter:
+      - errors_out: if provided, this list will be appended with tuples of
+        (source_name, error_message) for sources that failed during crawling.
+        This allows callers to collect per-source errors without interrupting
+        the overall collection pipeline.
     """
     if sources is None:
         sources = ["pubmed", "sage", "pubchem", "gene", "genome"]
+
+    # Check cache (if available) before performing network operations
+    cache_key = None
+    if use_cache and cache_utils is not None:
+        try:
+            cache_key = cache_utils.make_cache_key(
+                "collect_publications", query, sorted(sources), max_results_per_source
+            )
+            cached = cache_utils.get_cache(
+                cache_key, ttl_seconds=int(cache_ttl_hours * 3600)
+            )
+            if cached is not None:
+                return cached
+        except Exception:
+            # Cache errors should not prevent operation
+            cache_key = None
 
     # Use provided crawler instances or create defaults
     crawlers = {}
@@ -214,6 +246,15 @@ def collect_publications(
     for s in sources:
         crawler = crawlers.get(s)
         if not crawler:
+            # Record missing crawler as an error if requested; otherwise continue quietly
+            if errors_out is not None:
+                try:
+                    errors_out.append((s, "crawler not available"))
+                except Exception:
+                    # Best-effort: do not raise from caching/errors collection
+                    pass
+            else:
+                print(f"[collect_publications] crawler for {s} not available; skipping")
             continue
         try:
             items = crawler.search(query, max_results=max_results_per_source)
@@ -299,12 +340,28 @@ def collect_publications(
                 pub["url"] = item.get("url", "")
                 all_pubs.append(pub)
         except Exception as e:
-            # keep going on errors
-            print(f"[collect_publications] error crawling {s}: {e}")
+            # collect per-source errors and continue
+            err = str(e)
+            if errors_out is not None:
+                try:
+                    errors_out.append((s, err))
+                except Exception:
+                    print(
+                        f"[collect_publications] error appending to errors_out for {s}: {err}"
+                    )
+            else:
+                print(f"[collect_publications] error crawling {s}: {e}")
             continue
 
     # Deduplicate
     unique = deduplicate_publications(all_pubs)
+    # Persist to cache if requested (best-effort; cache_utils may be None)
+    if cache_key and cache_utils is not None:
+        try:
+            cache_utils.set_cache(cache_key, unique)
+        except Exception:
+            # Non-fatal: caching should not break collection
+            pass
     return unique
 
 
@@ -529,6 +586,160 @@ def export_gexf(G, path: str):
     if nx is None:
         raise RuntimeError("networkx is required")
     nx.write_gexf(G, path)
+
+
+# ---------------------------
+# Export helpers for publications
+# ---------------------------
+
+
+def export_publications_json(publications: List[Pub], path: str):
+    """Export a list of publications (List[dict]) to JSON."""
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(publications, fh, indent=2, ensure_ascii=False)
+    except Exception as e:
+        raise RuntimeError(f"Failed to write JSON export: {e}")
+
+
+def export_publications_csv(publications: List[Pub], path: str):
+    """Export publications to a CSV with sensible columns."""
+    import csv
+
+    fields = [
+        "title",
+        "year",
+        "doi",
+        "url",
+        "citations",
+        "abstract",
+        "source",
+        "authors",
+    ]
+    try:
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=fields)
+            writer.writeheader()
+            for p in publications:
+                row = {
+                    "title": p.get("title", ""),
+                    "year": p.get("year", ""),
+                    "doi": p.get("doi", ""),
+                    "url": p.get("url", ""),
+                    "citations": p.get("citations", 0),
+                    "abstract": p.get("abstract", ""),
+                    "source": p.get("source", ""),
+                    "authors": "; ".join(
+                        [
+                            a.get("name", str(a)) if isinstance(a, dict) else str(a)
+                            for a in p.get("authors", [])
+                        ]
+                    ),
+                }
+                writer.writerow(row)
+    except Exception as e:
+        raise RuntimeError(f"Failed to write CSV export: {e}")
+
+
+def _pub_to_bibtex(pub: Pub) -> str:
+    """Create a simple BibTeX @article entry for a publication dict (best-effort)."""
+    title = pub.get("title", "").replace("\n", " ").strip()
+    year = pub.get("year", "")
+    authors = pub.get("authors", [])
+    author_str = " and ".join(
+        [a.get("name", str(a)) if isinstance(a, dict) else str(a) for a in authors]
+    )
+    # Simple key generation: lastname + year + a short title slug
+    last = "unknown"
+    if authors:
+        first = authors[0]
+        if isinstance(first, dict):
+            last = (first.get("name", "").split()[-1]).lower() or "unknown"
+        else:
+            last = str(first).split()[-1].lower() or "unknown"
+    key_title = re.sub(r"\W+", "", title)[:40]
+    key = f"{last}{year}{key_title}"[:64]
+    bib = f"@article{{{key},\n"
+    bib += f"  title = {{{title}}},\n"
+    if author_str:
+        bib += f"  author = {{{author_str}}},\n"
+    if pub.get("doi"):
+        bib += f"  doi = {{{pub.get('doi')}}},\n"
+    if pub.get("year"):
+        bib += f"  year = {{{pub.get('year')}}},\n"
+    if pub.get("url"):
+        bib += f"  url = {{{pub.get('url')}}},\n"
+    bib += "}\n"
+    return bib
+
+
+def export_publications_bibtex(publications: List[Pub], path: str):
+    """Write a BibTeX file with one entry per publication (best-effort fields)."""
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            for p in publications:
+                fh.write(_pub_to_bibtex(p))
+    except Exception as e:
+        raise RuntimeError(f"Failed to write BibTeX export: {e}")
+
+
+# ---------------------------
+# In-memory export helpers (bytes) for Streamlit downloads
+# ---------------------------
+
+
+def publications_to_csv_bytes(publications: List[Pub]) -> bytes:
+    """Return CSV bytes for a list of publications (suitable for Streamlit download)."""
+    import csv
+    import io
+
+    if not publications:
+        return b""
+
+    headers = [
+        "title",
+        "year",
+        "doi",
+        "url",
+        "citations",
+        "abstract",
+        "source",
+        "authors",
+    ]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=headers, extrasaction="ignore")
+    writer.writeheader()
+    for p in publications:
+        row = {
+            "title": p.get("title", ""),
+            "year": p.get("year", ""),
+            "doi": p.get("doi", ""),
+            "url": p.get("url", ""),
+            "citations": p.get("citations", 0),
+            "abstract": p.get("abstract", ""),
+            "source": p.get("source", ""),
+            "authors": "; ".join(
+                [
+                    a.get("name", str(a)) if isinstance(a, dict) else str(a)
+                    for a in p.get("authors", [])
+                ]
+            ),
+        }
+        writer.writerow(row)
+    return buf.getvalue().encode("utf-8")
+
+
+def publications_to_json_bytes(publications: List[Pub]) -> bytes:
+    """Return JSON bytes for a list of publications (suitable for Streamlit download)."""
+    return json.dumps(publications, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def publications_to_bibtex_bytes(publications: List[Pub]) -> bytes:
+    """Return a bytes object with BibTeX entries for the given publications."""
+    entries = []
+    for p in publications:
+        entries.append(_pub_to_bibtex(p))
+    return ("\n".join(entries)).encode("utf-8")
 
 
 def visualize_pyvis(
@@ -761,6 +972,8 @@ def analyze_field(
     max_results_per_source: int = 500,
     sources: Optional[List[str]] = None,
     output_dir: Optional[str] = None,
+    use_cache: bool = True,
+    cache_ttl_hours: int = 24,
 ) -> Dict[str, Any]:
     """
     High-level pipeline that:
@@ -774,8 +987,14 @@ def analyze_field(
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
+    errors: List[Tuple[str, str]] = []
     pubs = collect_publications(
-        query, sources=sources, max_results_per_source=max_results_per_source
+        query,
+        sources=sources,
+        max_results_per_source=max_results_per_source,
+        use_cache=use_cache,
+        cache_ttl_hours=cache_ttl_hours,
+        errors_out=errors,
     )
     authors = compute_author_metrics(pubs)
     top_authors = [a for a in authors][:50]
@@ -812,6 +1031,7 @@ def analyze_field(
         "query": query,
         "n_publications": len(pubs),
         "publications": pubs,
+        "source_errors": errors,
         "top_authors": top_authors,
         "graph": G,
         "communities": partition,
