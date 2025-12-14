@@ -18,8 +18,7 @@ Design goals:
 
 from __future__ import annotations
 
-import json
-import math
+import itertools
 import os
 import re
 import statistics
@@ -578,7 +577,7 @@ def visualize_pyvis(
 
     def _try_forceatlas2(iterations, scalingRatio, gravity):
         try:
-            from fa2 import ForceAtlas2
+            from fa2 import ForceAtlas2  # type: ignore
         except Exception:
             return None
         try:
@@ -666,8 +665,22 @@ def visualize_pyvis(
         # Not critical; continue without throwing
         pass
 
-    # Write the HTML file
-    net.show(out_html)
+    # Write the HTML file (prefer `write_html` to avoid notebook/template rendering issues)
+    try:
+        write_fn = getattr(net, "write_html", None)
+        if callable(write_fn):
+            # Use explicit flags to avoid notebook rendering mode
+            write_fn(out_html, open_browser=False, notebook=False)
+        else:
+            # Fallback for older pyvis versions
+            net.show(out_html)
+    except Exception:
+        # As a last resort, try .show() (some pyvis versions only expose this)
+        try:
+            net.show(out_html)
+        except Exception:
+            # If even the fallback fails, surface nothing and let caller handle exceptions
+            pass
 
     return {"html": out_html, "layout_used": layout_used, "pos": pos}
 
