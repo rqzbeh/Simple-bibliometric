@@ -22,9 +22,21 @@ load_dotenv()
 class BibliometricCrawler:
     """Main orchestrator for bibliometric data crawling"""
     
-    def __init__(self):
-        """Initialize the crawler with API keys and crawlers"""
-        self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    def __init__(self, groq_model: str = None):
+        """Initialize the crawler with API keys and crawlers
+        
+        Args:
+            groq_model: The Groq AI model to use (default: from env or llama-3.1-70b-versatile)
+        """
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        if not groq_api_key:
+            raise ValueError(
+                "GROQ_API_KEY not found in environment variables. "
+                "Please set your Groq API key in the .env file or environment."
+            )
+        
+        self.groq_client = Groq(api_key=groq_api_key)
+        self.groq_model = groq_model or os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
         
         # Initialize all crawlers
         self.crawlers = {
@@ -66,7 +78,7 @@ Return your analysis as a JSON object with these keys:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_query}
                 ],
-                model="llama-3.1-70b-versatile",
+                model=self.groq_model,
                 temperature=0.3,
                 max_tokens=1000
             )
@@ -174,7 +186,7 @@ Provide your analysis as a JSON object with:
                     {"role": "system", "content": "You are a bibliometric data analyst. Provide structured guidance for data normalization and filtering."},
                     {"role": "user", "content": filter_prompt}
                 ],
-                model="llama-3.1-70b-versatile",
+                model=self.groq_model,
                 temperature=0.3,
                 max_tokens=1500
             )
@@ -261,7 +273,11 @@ def main():
         return
     
     # Initialize crawler
-    crawler = BibliometricCrawler()
+    try:
+        crawler = BibliometricCrawler()
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        return
     
     # Get user query
     print("\nEnter your research query (or 'quit' to exit):")

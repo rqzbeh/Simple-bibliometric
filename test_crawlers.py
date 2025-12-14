@@ -68,7 +68,9 @@ def test_base_crawler_methods():
     """Test base crawler helper methods"""
     print("\nTesting base crawler methods...")
     
-    crawler = WoSCrawler(api_key="test_key")
+    # Use a mock key for testing
+    test_key = "test_key_for_testing_only"
+    crawler = WoSCrawler(api_key=test_key)
     
     # Test header generation
     headers = crawler._get_headers()
