@@ -1028,14 +1028,33 @@ class SAGECrawler(BaseCrawler):
             results = []
 
             for item in items:
-                # Extract authors
+                # Extract authors (preserve name, ORCID, and affiliation when available)
                 authors = []
                 for author in item.get("author", []):
                     given = author.get("given", "")
                     family = author.get("family", "")
                     full_name = f"{given} {family}".strip()
+                    # Try to extract ORCID and affiliations when present in the CrossRef author object
+                    orcid = None
+                    affs: List[str] = []
+                    if isinstance(author, dict):
+                        # ORCID may be present as 'ORCID' or 'orcid' or as a URI
+                        orcid = author.get("ORCID") or author.get("orcid")
+                        if orcid and isinstance(orcid, str) and "orcid.org" in orcid:
+                            orcid = orcid.split("/")[-1]
+                        # affiliation can be a list of dicts or strings
+                        raw_aff = author.get("affiliation", []) or []
+                        for a in raw_aff:
+                            if isinstance(a, dict):
+                                if a.get("name"):
+                                    affs.append(a.get("name"))
+                            elif isinstance(a, str):
+                                affs.append(a)
+                    # Always include the name; attach metadata where available
                     if full_name:
-                        authors.append(full_name)
+                        authors.append(
+                            {"name": full_name, "orcid": orcid, "affiliation": affs}
+                        )
 
                 # Extract publication year (support both 'issued' and 'published-print' structures)
                 pub_date = item.get(

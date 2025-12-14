@@ -152,6 +152,51 @@ def test_optional_package_flags():
     return True
 
 
+def test_visualize_pyvis_html_generation():
+    """Test that visualize_pyvis can generate an HTML file using spring layout (fallback)."""
+    print("\nTesting visualize_pyvis HTML generation (spring fallback)...")
+    try:
+        import tempfile
+
+        from bibliometrics import visualize_pyvis
+
+        # pyvis and networkx are optional in some environments; skip gracefully if missing
+        try:
+            from pyvis.network import Network  # noqa: F401
+        except Exception as e:
+            print(f"  ⚠ pyvis not available; skipping visualize_pyvis test: {e}")
+            return True
+        try:
+            import networkx as nx  # type: ignore
+        except Exception as e:
+            print(f"  ⚠ networkx not available; skipping visualize_pyvis test: {e}")
+            return True
+    except Exception as e:
+        print(f"  ✗ Required modules not available: {e}")
+        return False
+
+    # Build a minimal graph
+    G = nx.Graph()
+    G.add_node("Alice", n_pubs=3, display_name="Alice Example")
+    G.add_node("Bob", n_pubs=2, display_name="Bob Example")
+    G.add_edge("Alice", "Bob", weight=1)
+
+    tmpdir = tempfile.mkdtemp(prefix="test_viz_")
+    out_html = os.path.join(tmpdir, "test_vis.html")
+    try:
+        res = visualize_pyvis(
+            G, out_html, notebook=False, layout="spring", spring_iterations=10, seed=1
+        )
+        if not os.path.exists(out_html):
+            print("  ✗ visualize_pyvis did not write the expected HTML file.")
+            return False
+        print("  ✓ visualize_pyvis wrote HTML:", out_html)
+        return True
+    except Exception as e:
+        print(f"  ✗ visualize_pyvis failed: {e}")
+        return False
+
+
 def run_all_tests():
     """Run all tests"""
     print("=" * 60)
@@ -164,6 +209,7 @@ def run_all_tests():
         test_base_crawler_methods,
         test_bibliometric_crawler_without_api,
         test_optional_package_flags,
+        test_visualize_pyvis_html_generation,
     ]
 
     results = []

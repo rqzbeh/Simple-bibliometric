@@ -77,6 +77,54 @@ Then enter your research query:
 > machine learning in healthcare
 ```
 
+### Interactive Dashboard (Streamlit)
+
+For a guided, interactive experience (visualization, layout tuning, filtering and export), use the Streamlit dashboard.
+
+1. Install dependencies (including optional extras for better layouts / visuals):
+```bash
+pip install -r requirements.txt
+# Optional: ForceAtlas2 layout (recommended for large networks)
+pip install fa2
+```
+
+Note: On some platforms `fa2` may require compilation support (C compiler / build tools). If `fa2` cannot be installed, the dashboard will automatically fall back to NetworkX's spring layout.
+
+2. Start the Streamlit app from the project root:
+```bash
+streamlit run app.py
+```
+or explicitly:
+```bash
+streamlit run Simple-bibliometric/app.py
+```
+
+3. In the dashboard:
+- Enter a query in the sidebar and click "Run analysis" to fetch publications and compute author metrics.
+- Inspect top authors, publication trends, and forecasts.
+- Use the "Interactive exploration" controls to:
+  - Set a minimum-publications threshold to filter authors,
+  - Search for author names (substring match),
+  - Choose a layout method ("Auto" will use ForceAtlas2 if installed; otherwise it falls back to spring),
+  - Adjust iteration counts for ForceAtlas2 / spring layouts,
+  - Click "Generate interactive network" to render an embedded pyvis visualization.
+- Download filtered GEXF files for use in Gephi or VOSviewer.
+
+### Notebook usage (optional)
+
+You can also use these utilities from a Jupyter notebook. Example:
+```python
+from bibliometric_crawler import BibliometricCrawler
+
+crawler = BibliometricCrawler()
+results = crawler.process_query("machine learning in healthcare")
+
+# Or programmatically use the pipeline
+from bibliometrics import analyze_field
+res = analyze_field("machine learning in healthcare", max_results_per_source=200, output_dir="analysis_output")
+```
+Run `jupyter notebook` or `jupyter lab` from the environment where dependencies are installed.
+
 ### Programmatic Usage
 
 ```python
@@ -93,6 +141,11 @@ print(f"Total results: {results['total_results']}")
 print(f"Results by database: {results['result_summary']}")
 print(f"Filtering guidance: {results['filtering_guidance']}")
 ```
+
+Notes:
+- Ensure `GROQ_API_KEY` is present in your `.env` (required for AI-driven query analysis and filtering).
+- For authoritative citation metrics, provide `SCOPUS_API_KEY` and/or `WOS_API_KEY` in `.env` when needed.
+- If you encounter trouble installing `fa2`, the dashboard still works and uses a reliable spring layout as a fallback.
 
 ## Architecture
 
