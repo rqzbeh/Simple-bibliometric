@@ -161,12 +161,7 @@ def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
     return self._process_ieee_response(response)
 ```
 
-### 10. Emerald Insight
-- **API Documentation**: https://developers.emeraldinsight.com/
-- **Authentication**: API Key
-- **Rate Limit**: Varies
-
-### 11. ERIC
+### 10. ERIC
 - **API Documentation**: https://eric.ed.gov/?api
 - **Authentication**: Not required for basic access
 - **Key Endpoints**:
@@ -184,7 +179,7 @@ def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
     return self._process_eric_response(response)
 ```
 
-### 12. Springer
+### 11. Springer
 - **API Documentation**: https://dev.springernature.com/
 - **Authentication**: API Key
 - **Rate Limit**: 5000 calls/day (basic)
@@ -192,12 +187,12 @@ def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
   - `/metadata/json` - Search metadata
   - `/openaccess/json` - Open access content
 
-### 13. EBSCO
+### 12. EBSCO
 - **API Documentation**: https://connect.ebsco.com/s/article/EDS-API-Documentation
 - **Authentication**: OAuth 2.0
 - **Note**: Requires authentication flow
 
-### 14. Wiley
+### 13. Wiley
 - **API Documentation**: Contact Wiley for API access
 - **Authentication**: API Key
 - **Note**: May require institutional subscription
