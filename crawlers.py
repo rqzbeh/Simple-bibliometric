@@ -37,6 +37,14 @@ except Exception:
     Crossref = None
     CROSSREF_AVAILABLE = False
 
+try:
+    from cerebras.cloud.sdk import Cerebras
+
+    CEREBRAS_AVAILABLE = True
+except Exception:
+    Cerebras = None
+    CEREBRAS_AVAILABLE = False
+
 
 class BaseCrawler(ABC):
     """Base class for all academic database crawlers"""

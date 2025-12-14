@@ -6,3 +6,4 @@ lxml>=4.9.0
 biopython
 pubchempy
 habanero
+cerebras_cloud_sdk

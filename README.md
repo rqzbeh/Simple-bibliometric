@@ -214,6 +214,22 @@ export GROQ_MODEL=llama-3.3-70b-versatile
 ```
 (Or set it in your `.env` file.)
 
+Optional: Cerebras provider fallback
+- The crawler can optionally use Cerebras Inference as a provider fallback if Groq is unavailable or a suitable Groq model cannot be selected.
+- To enable Cerebras fallback:
+  1. Install the Cerebras SDK:
+  ```bash
+  pip install cerebras_cloud_sdk
+  ```
+  2. Add your Cerebras API key and (optionally) preferred model to your `.env`:
+  ```env
+  CEREBRAS_API_KEY=your_cerebras_api_key_here
+  CEREBRAS_MODEL=llama-3.3-70b
+  ```
+  3. Behavior: on Groq failure (including model decommission), the crawler will attempt Groq automatic model selection first; if that does not produce a valid response and `CEREBRAS_API_KEY` is set, it will then attempt a chat completion with the configured `CEREBRAS_MODEL`.
+- You can test Cerebras by setting `CEREBRAS_API_KEY` and running the same `inspect_groq_models.py --suggest --test` flow; the helper scripts will detect the presence of Cerebras and will attempt the provider fallback when appropriate.
+- Note: Cerebras fallback requires a valid API key and network access. Keep API keys private and use `.env` for local configuration (do not commit real keys to version control).
+
 ### Testing utilities & full-crawl checks
 
 We've added small helper scripts to verify behavior and exercise real endpoints (useful for CI, manual checks, or debugging). These are lightweight and print concise summaries:

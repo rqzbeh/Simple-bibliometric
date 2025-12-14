@@ -11,6 +11,14 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 from groq import Groq
 
+try:
+    from cerebras.cloud.sdk import Cerebras
+
+    CEREBRAS_AVAILABLE = True
+except Exception:
+    Cerebras = None
+    CEREBRAS_AVAILABLE = False
+
 from crawlers import (
     EBSCOCrawler,
     ERICCrawler,
@@ -227,6 +235,60 @@ class BibliometricCrawler:
                         )
                 else:
                     print("[Groq] No suitable fallback model could be selected.")
+                    # Attempt Cerebras fallback if available and the user has provided a key
+                    if CEREBRAS_AVAILABLE and os.getenv("CEREBRAS_API_KEY"):
+                        try:
+                            cb_model = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
+                            cb_client = Cerebras(api_key=os.getenv("CEREBRAS_API_KEY"))
+                            cb_response = cb_client.chat.completions.create(
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_query},
+                                ],
+                                model=cb_model,
+                                temperature=0.3,
+                                max_tokens=1000,
+                            )
+                            # Extract content from Cerebras response (robust extraction)
+                            cb_text = None
+                            try:
+                                cb_text = cb_response.choices[0].message.content
+                            except Exception:
+                                try:
+                                    cb_text = (
+                                        cb_response.get("choices", [])[0]
+                                        .get("message", {})
+                                        .get("content", "")
+                                    )
+                                except Exception:
+                                    cb_text = str(cb_response)
+                            if cb_text:
+                                # Try to parse JSON embedded in code block (same parsing as for Groq)
+                                analysis_text = cb_text
+                                try:
+                                    if "```json" in analysis_text:
+                                        json_start = analysis_text.find("```json") + 7
+                                        json_end = analysis_text.find("```", json_start)
+                                        analysis_text = analysis_text[
+                                            json_start:json_end
+                                        ]
+                                    elif "```" in analysis_text:
+                                        json_start = analysis_text.find("```") + 3
+                                        json_end = analysis_text.find("```", json_start)
+                                        analysis_text = analysis_text[
+                                            json_start:json_end
+                                        ]
+                                    analysis = json.loads(analysis_text.strip())
+                                except Exception:
+                                    analysis = {
+                                        "search_terms": [user_query],
+                                        "databases": list(self.crawlers.keys()),
+                                        "filters": {},
+                                        "normalized_query": user_query,
+                                    }
+                                return analysis
+                        except Exception as ecb:
+                            print(f"[Cerebras] Fallback failed: {ecb}")
             else:
                 print(f"Error analyzing query with Groq AI: {e}")
 
@@ -422,18 +484,76 @@ Provide your analysis as a JSON object with:
                         }
                 else:
                     print(
-                        "[Groq] No fallback model could be selected; using default guidance."
+                        "[Groq] No fallback model could be selected; attempting Cerebras fallback..."
                     )
-                    guidance = {
-                        "normalization_rules": {},
-                        "deduplication_strategy": "Compare titles and DOIs",
-                        "relevance_criteria": [
-                            "Recent publications",
-                            "Citation count",
-                            "Relevance to query",
-                        ],
-                        "recommended_filters": [],
-                    }
+                    guidance = None
+                    # Try Cerebras as a provider fallback if available
+                    if CEREBRAS_AVAILABLE and os.getenv("CEREBRAS_API_KEY"):
+                        try:
+                            cb_client = Cerebras(api_key=os.getenv("CEREBRAS_API_KEY"))
+                            cb_model = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
+                            cb_resp = cb_client.chat.completions.create(
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": "You are a bibliometric data analyst. Provide structured guidance for data normalization and filtering.",
+                                    },
+                                    {"role": "user", "content": filter_prompt},
+                                ],
+                                model=cb_model,
+                                temperature=0.3,
+                                max_tokens=1500,
+                            )
+                            # Extract guidance text robustly
+                            cb_text = None
+                            try:
+                                cb_text = cb_resp.choices[0].message.content
+                            except Exception:
+                                try:
+                                    cb_text = (
+                                        cb_resp.get("choices", [])[0]
+                                        .get("message", {})
+                                        .get("content", "")
+                                    )
+                                except Exception:
+                                    cb_text = str(cb_resp)
+                            if cb_text:
+                                print("\nAI Filtering Guidance (Cerebras):")
+                                print(cb_text)
+                                try:
+                                    if "```json" in cb_text:
+                                        json_start = cb_text.find("```json") + 7
+                                        json_end = cb_text.find("```", json_start)
+                                        cb_text = cb_text[json_start:json_end]
+                                    elif "```" in cb_text:
+                                        json_start = cb_text.find("```") + 3
+                                        json_end = cb_text.find("```", json_start)
+                                        cb_text = cb_text[json_start:json_end]
+                                    guidance = json.loads(cb_text.strip())
+                                except Exception:
+                                    guidance = {
+                                        "normalization_rules": {},
+                                        "deduplication_strategy": "Compare titles and DOIs",
+                                        "relevance_criteria": [
+                                            "Recent publications",
+                                            "Citation count",
+                                            "Relevance to query",
+                                        ],
+                                        "recommended_filters": [],
+                                    }
+                        except Exception as ecb:
+                            print(f"[Cerebras] fallback failed: {ecb}")
+                    if guidance is None:
+                        guidance = {
+                            "normalization_rules": {},
+                            "deduplication_strategy": "Compare titles and DOIs",
+                            "relevance_criteria": [
+                                "Recent publications",
+                                "Citation count",
+                                "Relevance to query",
+                            ],
+                            "recommended_filters": [],
+                        }
             else:
                 print(f"Error getting filtering guidance: {e}")
                 guidance = {

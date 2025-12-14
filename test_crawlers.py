@@ -132,7 +132,12 @@ def test_optional_package_flags():
         print(f"  ✗ Failed to import crawlers module: {e}")
         return False
 
-    flags = ["PUBCHEMPY_AVAILABLE", "CROSSREF_AVAILABLE", "BIOPYTHON_AVAILABLE"]
+    flags = [
+        "PUBCHEMPY_AVAILABLE",
+        "CROSSREF_AVAILABLE",
+        "BIOPYTHON_AVAILABLE",
+        "CEREBRAS_AVAILABLE",
+    ]
 
     for f in flags:
         try:
