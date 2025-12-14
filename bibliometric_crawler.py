@@ -11,7 +11,7 @@ import json
 from crawlers import (
     WoSCrawler, ScopusCrawler, ScienceDirectCrawler, PubMedCrawler,
     PubChemCrawler, GeneCrawler, GenomeCrawler, SAGECrawler,
-    IEEECrawler, EmeraldCrawler, ERICCrawler, SpringerCrawler,
+    IEEECrawler, ERICCrawler, SpringerCrawler,
     EBSCOCrawler, WileyCrawler
 )
 
@@ -49,7 +49,6 @@ class BibliometricCrawler:
             "genome": GenomeCrawler(os.getenv("GENOME_API_KEY")),
             "sage": SAGECrawler(os.getenv("SAGE_API_KEY")),
             "ieee": IEEECrawler(os.getenv("IEEE_API_KEY")),
-            "emerald": EmeraldCrawler(os.getenv("EMERALD_API_KEY")),
             "eric": ERICCrawler(os.getenv("ERIC_API_KEY")),
             "springer": SpringerCrawler(os.getenv("SPRINGER_API_KEY")),
             "ebsco": EBSCOCrawler(os.getenv("EBSCO_API_KEY")),
@@ -68,7 +67,7 @@ class BibliometricCrawler:
 
 Return your analysis as a JSON object with these keys:
 - search_terms: list of search terms and variations
-- databases: list of relevant databases (use: wos, scopus, sciencedirect, pubmed, pubchem, gene, genome, sage, ieee, emerald, eric, springer, ebsco, wiley)
+- databases: list of relevant databases (use: wos, scopus, sciencedirect, pubmed, pubchem, gene, genome, sage, ieee, eric, springer, ebsco, wiley)
 - filters: any date ranges, publication types, or other filters
 - normalized_query: a standardized version of the query for searching"""
 

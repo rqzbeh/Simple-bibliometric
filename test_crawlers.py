@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from crawlers import (
     BaseCrawler, WoSCrawler, ScopusCrawler, ScienceDirectCrawler,
     PubMedCrawler, PubChemCrawler, GeneCrawler, GenomeCrawler,
-    SAGECrawler, IEEECrawler, EmeraldCrawler, ERICCrawler,
+    SAGECrawler, IEEECrawler, ERICCrawler,
     SpringerCrawler, EBSCOCrawler, WileyCrawler
 )
 
@@ -24,7 +24,7 @@ def test_crawler_instantiation():
     crawlers = [
         WoSCrawler, ScopusCrawler, ScienceDirectCrawler,
         PubMedCrawler, PubChemCrawler, GeneCrawler, GenomeCrawler,
-        SAGECrawler, IEEECrawler, EmeraldCrawler, ERICCrawler,
+        SAGECrawler, IEEECrawler, ERICCrawler,
         SpringerCrawler, EBSCOCrawler, WileyCrawler
     ]
     
@@ -74,14 +74,14 @@ def test_base_crawler_methods():
     
     # Test header generation
     headers = crawler._get_headers()
-    assert "Content-Type" in headers
-    assert "Authorization" in headers
+    assert "Accept" in headers
+    assert "X-ApiKey" in headers
     print("  ✓ Headers generation works")
     
     # Test without API key
     crawler2 = PubMedCrawler()
     headers2 = crawler2._get_headers()
-    assert "Content-Type" in headers2
+    assert "Accept" in headers2
     print("  ✓ Headers work without API key")
     
     return True
