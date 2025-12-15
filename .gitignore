@@ -15,6 +15,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# But don't ignore Flutter lib directories
+!frontend/**/lib/
 parts/
 sdist/
 var/
@@ -47,3 +49,5 @@ analysis_output/
 bib_output_*/
 *.gexf
 *.html
+# But don't ignore Flutter web HTML files
+!frontend/**/web/*.html
