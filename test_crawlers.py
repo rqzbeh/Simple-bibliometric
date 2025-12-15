@@ -197,6 +197,54 @@ def test_visualize_pyvis_html_generation():
         return False
 
 
+def test_jobs_inprocess_basic():
+    """Basic test for the in-process job backend (direct InProcessBackend usage)."""
+    print("\nTesting in-process job backend (direct InProcessBackend)...")
+    try:
+        from jobs import InProcessBackend
+    except Exception as e:
+        print(f"  ⚠ InProcessBackend not available; skipping: {e}")
+        return True
+
+    backend = InProcessBackend(max_workers=1)
+
+    # simple task to verify functionality
+    def _add(a, b):
+        return a + b
+
+    try:
+        job_id = backend.submit(_add, 1, 2)
+    except Exception as e:
+        print(f"  ✗ Failed to submit job to InProcessBackend: {e}")
+        return False
+
+    finished = False
+    import time
+
+    for _ in range(50):
+        info = backend.status(job_id)
+        if info and info.get("status") == "finished":
+            finished = True
+            break
+        time.sleep(0.05)
+
+    if not finished:
+        print(f"  ✗ Job did not finish in time: {info}")
+        return False
+
+    try:
+        res = backend.result(job_id, timeout=1)
+        if res == 3:
+            print("  ✓ in-process job backend (direct) works")
+            return True
+        else:
+            print(f"  ✗ Unexpected job result: {res}")
+            return False
+    except Exception as e:
+        print(f"  ✗ Failed to retrieve job result from InProcessBackend: {e}")
+        return False
+
+
 def test_cache_utils_basic():
     """Basic tests for cache utilities (set/get/clear)."""
     print("\nTesting cache utilities...")
@@ -247,6 +295,7 @@ def run_all_tests():
         test_bibliometric_crawler_without_api,
         test_optional_package_flags,
         test_cache_utils_basic,
+        test_jobs_inprocess_basic,
         test_visualize_pyvis_html_generation,
     ]
 

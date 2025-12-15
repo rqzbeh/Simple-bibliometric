@@ -36,3 +36,4 @@ python-Levenshtein>=0.21.0
 # API server (for external UIs / Flutter)
 fastapi>=0.100.0
 uvicorn[standard]>=0.22.0
+fakeredis
