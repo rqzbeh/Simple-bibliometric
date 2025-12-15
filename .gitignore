@@ -44,6 +44,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Cache directories
+.cache/
+
 # Analysis outputs and generated visuals
 analysis_output/
 bib_output_*/

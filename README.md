@@ -1,11 +1,61 @@
 # Simple-bibliometric
 
-A bibliometric data crawler powered by Groq AI that searches across multiple academic databases and intelligently filters and normalizes results.
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-## Features
+A production-ready bibliometric data crawler powered by Groq AI that searches across multiple academic databases and intelligently filters and normalizes results. Perfect for researchers, data scientists, and academic institutions conducting comprehensive literature reviews and bibliometric analysis.
 
-- **AI-Powered Query Analysis**: Uses Groq AI to understand user queries and determine optimal search strategies
-- **Multi-Database Support**: Crawls data from 13 academic sources with **actual API implementations**:
+## ✨ Features
+
+## 📑 Table of Contents
+
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Usage](#-usage)
+  - [Command Line Interface](#command-line-interface)
+  - [Interactive Dashboard (Streamlit)](#interactive-dashboard-streamlit)
+  - [API Server (FastAPI)](#api-server-fastapi)
+  - [Programmatic Usage](#programmatic-usage)
+- [Architecture](#architecture)
+- [API Implementation Status](#api-implementation-status)
+- [Production Deployment](#-production-deployment)
+- [Testing](#-testing)
+- [Troubleshooting](#-troubleshooting)
+- [Security Best Practices](#-security-best-practices)
+- [Contributing](#-contributing)
+- [License](#license)
+- [Support](#support)
+
+## 🚀 Quick Start
+
+```bash
+# Clone and install
+git clone https://github.com/rqzbeh/Simple-bibliometric.git
+cd Simple-bibliometric
+pip install -r requirements.txt
+
+# Configure (minimum: GROQ_API_KEY required)
+cp .env.example .env
+# Edit .env and add your Groq API key
+
+# Run the Streamlit dashboard
+streamlit run app.py
+
+# Or use the CLI
+python bibliometric_crawler.py
+
+# Or start the API server
+uvicorn api:app --reload
+```
+
+## ✨ Features
+
+### Core Capabilities
+- **🤖 AI-Powered Query Analysis**: Uses Groq AI (with Cerebras fallback) to understand user queries and determine optimal search strategies
+- **📚 Multi-Database Support**: Crawls data from 13 academic sources with **actual API implementations**:
   - Web of Science (WoS) - Clarivate API
   - Scopus - Elsevier API
   - ScienceDirect - Elsevier API
@@ -20,47 +70,157 @@ A bibliometric data crawler powered by Groq AI that searches across multiple aca
   - EBSCO - EBSCO API (requires OAuth)
   - Wiley Online Library - Wiley TDM API
 
-- **Intelligent Data Filtering**: AI automatically identifies and combines similar results (e.g., "data mining" and "data-mining")
-- **Result Normalization**: Deduplicates entries across databases
-- **Rate Limiting**: Respects API rate limits for each source
-- **Standardized Output**: All crawlers return data in a consistent format
-- **Extensible Architecture**: Easy to add new data sources
+### Advanced Features
+- **🎯 Intelligent Data Filtering**: AI automatically identifies and combines similar results (e.g., "data mining" and "data-mining")
+- **🔄 Result Normalization**: Deduplicates entries across databases
+- **⚡ Rate Limiting**: Respects API rate limits for each source
+- **📊 Comprehensive Analytics**: Computes author-level metrics (h-index, g-index, citations)
+- **🌐 Network Visualization**: Interactive co-authorship network analysis with PyVis and GEXF export
+- **📈 Time Series Analysis**: Publication trends with ARIMA forecasting
+- **💾 Smart Caching**: Reduces API calls with configurable TTL-based caching
+- **🎨 Multiple Interfaces**: CLI, Streamlit dashboard, FastAPI server, and Flutter mobile UI
+- **🔒 Production Ready**: Background job queue with RQ/Redis support for scalable deployments
+- **📤 Multiple Export Formats**: CSV, JSON, BibTeX, and GEXF for Gephi/VOSviewer
 
-## Installation
+### Extensibility
+- **🔌 Extensible Architecture**: Easy to add new data sources
+- **📦 Package Integration**: Prefers Python packages (Biopython, pubchempy, habanero) when available to reduce API key requirements
+- **🛡️ Automatic Fallbacks**: Groq model auto-selection and Cerebras fallback for reliability
 
-1. Clone the repository:
+## 📦 Installation
+
+### Prerequisites
+
+- Python 3.8 or higher
+- pip package manager
+- (Optional) Redis server for production job queue
+- (Optional) C compiler for `fa2` package (better network layouts)
+
+### Standard Installation
+
+1. **Clone the repository:**
 ```bash
 git clone https://github.com/rqzbeh/Simple-bibliometric.git
 cd Simple-bibliometric
 ```
 
-2. Install dependencies:
+2. **Create a virtual environment (recommended):**
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. **Install dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Set up your API keys:
+### Optional Dependencies
+
+**ForceAtlas2 Layout (better network visualization):**
+```bash
+pip install fa2  # May require C compiler on some systems
+```
+
+**RQ for Production Job Queue:**
+```bash
+pip install rq redis
+```
+
+**Development Tools:**
+```bash
+pip install pytest flake8 black mypy
+```
+
+### Docker Installation (Alternative)
+
+```bash
+docker build -t simple-bibliometric .
+docker run -p 8501:8501 -p 8000:8000 --env-file .env simple-bibliometric
+```
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+Create a `.env` file in the project root (copy from `.env.example`):
+
 ```bash
 cp .env.example .env
-# Edit .env and add your API keys
 ```
 
-## Configuration
-
-Create a `.env` file with your API keys:
+### Required Configuration
 
 ```env
-# Required
+# REQUIRED: Groq API key for AI-powered analysis
 GROQ_API_KEY=your_groq_api_key_here
 
-# Optional - Add as you obtain them
-WOS_API_KEY=your_wos_api_key
-SCOPUS_API_KEY=your_scopus_api_key
-SCIENCEDIRECT_API_KEY=your_sciencedirect_api_key
-# ... etc
+# OPTIONAL: Specify Groq model (auto-selected if not set)
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
-Get your Groq API key from: https://console.groq.com/
+**Get your Groq API key:** https://console.groq.com/
+
+### Optional API Keys
+
+For access to premium databases and higher rate limits:
+
+```env
+# NCBI Services (optional - works without keys via public APIs)
+NCBI_EMAIL=your_email@example.com  # Recommended by NCBI
+PUBMED_API_KEY=your_key_here
+GENE_API_KEY=your_key_here
+GENOME_API_KEY=your_key_here
+PUBCHEM_API_KEY=your_key_here
+
+# Premium Database APIs (require registration)
+WOS_API_KEY=your_wos_key            # Web of Science
+SCOPUS_API_KEY=your_scopus_key      # Scopus
+SCIENCEDIRECT_API_KEY=your_key      # ScienceDirect
+IEEE_API_KEY=your_ieee_key          # IEEE Xplore
+SPRINGER_API_KEY=your_springer_key  # Springer Nature
+EBSCO_API_KEY=your_ebsco_key        # EBSCO
+WILEY_API_KEY=your_wiley_key        # Wiley
+
+# Cerebras Fallback (optional)
+CEREBRAS_API_KEY=your_cerebras_key
+CEREBRAS_MODEL=llama-3.3-70b
+```
+
+### Production Configuration
+
+```env
+# Logging
+LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
+
+# Job Queue (for production deployments)
+BIB_USE_RQ=1                           # Enable RQ backend
+REDIS_URL=redis://localhost:6379/0     # Redis connection
+BIB_JOB_OUTPUT_DIR=/var/lib/bib-jobs  # Job output directory
+
+# Caching
+DEFAULT_MAX_RESULTS=100
+CACHE_TTL_HOURS=24
+```
+
+### API Key Registration Links
+
+| Database | Required | Registration Link |
+|----------|----------|-------------------|
+| Groq AI | ✅ Yes | https://console.groq.com/ |
+| PubMed | ⚪ Optional* | https://www.ncbi.nlm.nih.gov/account/ |
+| ERIC | ⚪ No | N/A (Public API) |
+| SAGE | ⚪ No | N/A (uses CrossRef) |
+| Web of Science | 🔑 Yes | https://developer.clarivate.com/ |
+| Scopus | 🔑 Yes | https://dev.elsevier.com/ |
+| ScienceDirect | 🔑 Yes | https://dev.elsevier.com/ |
+| IEEE Xplore | 🔑 Yes | https://developer.ieee.org/ |
+| Springer | 🔑 Yes | https://dev.springernature.com/ |
+| EBSCO | 🔑 Yes | https://connect.ebsco.com/ |
+| Wiley | 🔑 Yes | https://onlinelibrary.wiley.com/ |
+| Cerebras | ⚪ Optional | https://cerebras.ai/ |
+
+*Optional but recommended for higher rate limits
 
 ## Usage
 
@@ -492,16 +652,687 @@ By using these recommended packages and utilities, the crawler will work with re
 
 *Optional but recommended for higher rate limits
 
+## 🚀 Production Deployment
+
+### Architecture Overview
+
+Simple-bibliometric is designed for both development and production environments:
+
+- **Development**: In-process job queue with ThreadPoolExecutor
+- **Production**: RQ (Redis Queue) with persistent job storage
+
+### Deployment Options
+
+#### Option 1: Single Server Deployment
+
+**Requirements:**
+- Ubuntu/Debian Linux server
+- Python 3.8+
+- Redis (optional, for job queue)
+- Nginx (for reverse proxy)
+- Systemd (for service management)
+
+**Setup Steps:**
+
+1. **Install System Dependencies:**
+```bash
+sudo apt-get update
+sudo apt-get install -y python3 python3-pip python3-venv redis-server nginx
+```
+
+2. **Clone and Setup Application:**
+```bash
+cd /opt
+sudo git clone https://github.com/rqzbeh/Simple-bibliometric.git
+cd Simple-bibliometric
+sudo python3 -m venv venv
+sudo venv/bin/pip install -r requirements.txt
+```
+
+3. **Configure Environment:**
+```bash
+sudo cp .env.example .env
+sudo nano .env  # Add your API keys
+```
+
+4. **Create Systemd Service for API:**
+```bash
+sudo tee /etc/systemd/system/bibliometric-api.service << EOF
+[Unit]
+Description=Simple Bibliometric API
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/Simple-bibliometric
+Environment="PATH=/opt/Simple-bibliometric/venv/bin"
+ExecStart=/opt/Simple-bibliometric/venv/bin/uvicorn api:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+5. **Create Systemd Service for RQ Worker:**
+```bash
+sudo tee /etc/systemd/system/bibliometric-worker.service << EOF
+[Unit]
+Description=Simple Bibliometric RQ Worker
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/Simple-bibliometric
+Environment="PATH=/opt/Simple-bibliometric/venv/bin"
+Environment="BIB_USE_RQ=1"
+Environment="REDIS_URL=redis://localhost:6379/0"
+ExecStart=/opt/Simple-bibliometric/venv/bin/rq worker simple-bib-queue
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+6. **Configure Nginx:**
+```bash
+sudo tee /etc/nginx/sites-available/bibliometric << EOF
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOF
+
+sudo ln -s /etc/nginx/sites-available/bibliometric /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+7. **Start Services:**
+```bash
+sudo systemctl enable redis-server bibliometric-api bibliometric-worker
+sudo systemctl start redis-server bibliometric-api bibliometric-worker
+```
+
+8. **Check Status:**
+```bash
+sudo systemctl status bibliometric-api bibliometric-worker
+```
+
+#### Option 2: Docker Deployment
+
+**Create `Dockerfile`:**
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc g++ build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python packages
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Expose ports
+EXPOSE 8000 8501
+
+# Run API server
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Create `docker-compose.yml`:**
+```yaml
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - redis-data:/data
+
+  api:
+    build: .
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - BIB_USE_RQ=1
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - ./analysis_outputs:/app/analysis_outputs
+
+  worker:
+    build: .
+    restart: always
+    command: rq worker simple-bib-queue
+    env_file:
+      - .env
+    environment:
+      - BIB_USE_RQ=1
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - ./analysis_outputs:/app/analysis_outputs
+
+  streamlit:
+    build: .
+    restart: always
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+
+volumes:
+  redis-data:
+```
+
+**Deploy:**
+```bash
+docker-compose up -d
+```
+
+#### Option 3: Kubernetes Deployment
+
+See `k8s/` directory for Kubernetes manifests (deployment, service, ingress, configmap).
+
+### Performance Tuning
+
+**For High-Volume Production:**
+
+1. **Redis Configuration** (`/etc/redis/redis.conf`):
+```conf
+maxmemory 2gb
+maxmemory-policy allkeys-lru
+save 900 1
+save 300 10
+```
+
+2. **RQ Worker Scaling:**
+```bash
+# Start multiple workers for parallel processing
+for i in {1..4}; do
+    rq worker simple-bib-queue --name worker-$i &
+done
+```
+
+3. **API Server Scaling:**
+```bash
+# Use multiple workers with Gunicorn
+gunicorn api:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+```
+
+4. **Nginx Rate Limiting:**
+```nginx
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
+location /api {
+    limit_req zone=api_limit burst=20 nodelay;
+    proxy_pass http://localhost:8000;
+}
+```
+
+### Monitoring and Logging
+
+**1. Application Logs:**
+```bash
+# View API logs
+sudo journalctl -u bibliometric-api -f
+
+# View worker logs
+sudo journalctl -u bibliometric-worker -f
+```
+
+**2. Redis Monitoring:**
+```bash
+redis-cli INFO stats
+redis-cli MONITOR
+```
+
+**3. Job Queue Monitoring:**
+```python
+from rq import Queue
+from redis import Redis
+
+redis_conn = Redis.from_url('redis://localhost:6379/0')
+q = Queue('simple-bib-queue', connection=redis_conn)
+
+print(f"Queued: {q.count}")
+print(f"Failed: {len(q.failed_job_registry)}")
+```
+
+### Backup and Recovery
+
+**Backup Redis Data:**
+```bash
+# Create backup
+redis-cli SAVE
+cp /var/lib/redis/dump.rdb /backup/redis-$(date +%Y%m%d).rdb
+
+# Restore backup
+sudo systemctl stop redis-server
+sudo cp /backup/redis-20231201.rdb /var/lib/redis/dump.rdb
+sudo systemctl start redis-server
+```
+
+**Backup Job Outputs:**
+```bash
+tar -czf job-outputs-$(date +%Y%m%d).tar.gz /var/lib/bib-jobs/
+```
+
+## 🧪 Testing
+
+### Running Tests
+
+The project includes comprehensive test suites:
+
+**1. Unit Tests:**
+```bash
+# Run all tests
+python test_crawlers.py
+python test_jobs.py
+python test_api_jobs.py
+python test_redis_artifacts.py
+```
+
+**2. Integration Tests:**
+```bash
+# Quick sanity check (no API keys needed)
+python integration_test.py --max-results 5
+
+# Full crawler test (tests all data sources)
+python full_crawl_test.py --query "machine learning" --max-results 5
+```
+
+**3. API Tests:**
+```bash
+# Test API endpoints
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"query":"test","max_results":10}'
+```
+
+### Continuous Integration
+
+**GitHub Actions Workflow** (`.github/workflows/test.yml`):
+```yaml
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python test_crawlers.py
+      - run: python test_jobs.py
+```
+
+### Test Coverage
+
+Current test coverage:
+- ✅ Crawler instantiation and basic operations
+- ✅ Job queue (in-process and RQ backends)
+- ✅ API endpoints (sync and async)
+- ✅ Cache utilities
+- ✅ Data export formats
+- ✅ Network visualization
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### Issue: "GROQ_API_KEY not found"
+**Solution:**
+```bash
+# Ensure .env file exists and contains GROQ_API_KEY
+cp .env.example .env
+nano .env  # Add your Groq API key
+```
+
+#### Issue: "Module 'streamlit' not found"
+**Solution:**
+```bash
+pip install -r requirements.txt
+```
+
+#### Issue: "Failed to resolve hostname" (Network Errors)
+**Cause:** Running in an environment without internet access or with DNS issues.
+**Solution:**
+- Check network connectivity: `ping google.com`
+- Verify DNS: `nslookup eutils.ncbi.nlm.nih.gov`
+- Configure proxy if needed
+
+#### Issue: "fa2 installation fails"
+**Cause:** Missing C compiler for building the ForceAtlas2 extension.
+**Solution:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install build-essential python3-dev
+
+# macOS
+xcode-select --install
+
+# Or skip fa2 - the app will use spring layout fallback
+```
+
+#### Issue: "Rate limit exceeded"
+**Cause:** Too many API requests to a data source.
+**Solution:**
+- Reduce `max_results` parameter
+- Add API keys for higher rate limits
+- Enable caching with `use_cache=True`
+- Wait before retrying
+
+#### Issue: "Redis connection refused"
+**Solution:**
+```bash
+# Start Redis server
+sudo systemctl start redis-server
+
+# Or use in-process backend (no Redis needed)
+unset BIB_USE_RQ
+```
+
+#### Issue: "Job stuck in 'running' state"
+**Solution:**
+```bash
+# Check worker status
+rq info --url redis://localhost:6379/0
+
+# Restart worker
+sudo systemctl restart bibliometric-worker
+```
+
+### Debug Mode
+
+Enable detailed logging:
+```bash
+export LOG_LEVEL=DEBUG
+python bibliometric_crawler.py
+```
+
+Or in `.env`:
+```env
+LOG_LEVEL=DEBUG
+```
+
+### Getting Help
+
+1. **Check Documentation:** Review this README and `API_INTEGRATION_GUIDE.md`
+2. **Run Diagnostics:**
+   ```bash
+   python inspect_groq_models.py --list
+   python integration_test.py --max-results 3
+   ```
+3. **Open an Issue:** https://github.com/rqzbeh/Simple-bibliometric/issues
+4. **Include Information:**
+   - Python version: `python --version`
+   - Package versions: `pip freeze`
+   - Error messages and stack traces
+   - Steps to reproduce
+
+## 🔒 Security Best Practices
+
+### API Key Management
+
+**❌ DON'T:**
+- Commit `.env` file to version control
+- Hardcode API keys in source code
+- Share API keys in logs or error messages
+- Use production keys in development
+
+**✅ DO:**
+- Use `.env` file for local development
+- Use environment variables in production
+- Use secrets management (AWS Secrets Manager, HashiCorp Vault)
+- Rotate API keys regularly
+- Use separate keys for dev/staging/prod
+
+### Network Security
+
+**Enable HTTPS:**
+```nginx
+server {
+    listen 443 ssl http2;
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    
+    location / {
+        proxy_pass http://localhost:8000;
+    }
+}
+```
+
+**Rate Limiting:**
+```python
+# In api.py, add rate limiting middleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+@app.post("/analyze")
+@limiter.limit("10/minute")
+async def analyze_endpoint(...):
+    ...
+```
+
+**CORS Configuration:**
+```python
+# In api.py, restrict CORS origins in production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://yourdomain.com"],  # Not ["*"]
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+```
+
+### Data Security
+
+**1. Sanitize User Input:**
+- Validate query strings
+- Limit input length
+- Escape special characters
+
+**2. Secure File Downloads:**
+- Use time-limited tokens
+- Validate file paths (prevent directory traversal)
+- Implement access control
+
+**3. Secure Redis:**
+```conf
+# /etc/redis/redis.conf
+bind 127.0.0.1
+requirepass your-strong-redis-password
+```
+
+**4. Regular Updates:**
+```bash
+# Update dependencies regularly
+pip install --upgrade -r requirements.txt
+pip audit  # Check for vulnerabilities
+```
+
+### Compliance
+
+- **GDPR**: If collecting user data, implement privacy controls
+- **API Terms**: Respect rate limits and terms of service for each database API
+- **Citation**: Properly attribute data sources in outputs
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how you can help:
+
+### Getting Started
+
+1. **Fork the repository**
+2. **Create a feature branch:**
+   ```bash
+   git checkout -b feature/amazing-feature
+   ```
+3. **Make your changes**
+4. **Test thoroughly:**
+   ```bash
+   python test_crawlers.py
+   python test_jobs.py
+   ```
+5. **Commit with clear messages:**
+   ```bash
+   git commit -m "Add amazing feature: description"
+   ```
+6. **Push and create a Pull Request**
+
+### Contribution Guidelines
+
+**Code Style:**
+- Follow PEP 8 style guide
+- Use type hints where possible
+- Add docstrings to functions and classes
+- Keep functions focused and small
+
+**Testing:**
+- Add tests for new features
+- Ensure existing tests pass
+- Test edge cases and error conditions
+
+**Documentation:**
+- Update README for user-facing changes
+- Add inline comments for complex logic
+- Update API_INTEGRATION_GUIDE.md for new data sources
+
+**Adding a New Data Source:**
+
+1. Create a new crawler class in `crawlers.py`:
+```python
+class MyNewCrawler(BaseCrawler):
+    def __init__(self, api_key: str = None):
+        super().__init__("MyNewSource", api_key)
+        self.base_url = "https://api.mynewsource.com"
+    
+    def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
+        # Implement search logic
+        pass
+```
+
+2. Register in `bibliometric_crawler.py`:
+```python
+from crawlers import MyNewCrawler
+
+self.crawlers = {
+    # ... existing crawlers ...
+    "mynewsource": MyNewCrawler(os.getenv("MYNEWSOURCE_API_KEY")),
+}
+```
+
+3. Add tests in `test_crawlers.py`
+4. Update documentation
+
+### Areas for Contribution
+
+- 🐛 Bug fixes
+- ✨ New data source integrations
+- 📚 Documentation improvements
+- 🧪 Additional tests
+- ⚡ Performance optimizations
+- 🎨 UI/UX enhancements
+- 🌍 Internationalization
+- 📊 New visualization types
+
+## 📊 Project Status
+
+### Completed Features
+
+✅ Multi-database crawler with 13 data sources  
+✅ AI-powered query analysis and filtering  
+✅ Author metrics computation (h-index, g-index)  
+✅ Network visualization with multiple layouts  
+✅ Time series analysis and forecasting  
+✅ Multiple export formats (CSV, JSON, BibTeX, GEXF)  
+✅ RESTful API with async job queue  
+✅ Streamlit dashboard  
+✅ Smart caching system  
+✅ Comprehensive test suite  
+✅ Production deployment guides  
+✅ Docker support  
+✅ Groq model auto-selection and Cerebras fallback  
+✅ Flutter mobile UI prototype  
+
+### Known Limitations
+
+- EBSCO requires OAuth 2.0 flow (partial implementation)
+- Wiley requires institutional access
+- Some data sources have rate limits
+- Citation counts vary by data source quality
+- Network analysis performance degrades with very large graphs (>10k nodes)
+
+### Roadmap
+
+**Short Term:**
+- [ ] Complete EBSCO OAuth 2.0 integration
+- [ ] Add institutional proxy support for Wiley
+- [ ] Implement GraphQL API
+- [ ] Add WebSocket support for real-time progress
+- [ ] Enhance Flutter UI with full feature parity
+
+**Long Term:**
+- [ ] Machine learning for research trend prediction
+- [ ] Collaborative filtering recommendations
+- [ ] Multi-user support with authentication
+- [ ] Cloud deployment templates (AWS, GCP, Azure)
+- [ ] Integration with reference managers (Zotero, Mendeley)
+
 ## Future Development
 
-- [ ] Add OAuth 2.0 flow for EBSCO
-- [ ] Add institutional access support for Wiley
-- [ ] Add caching to avoid duplicate API calls
-- [ ] Implement Flutter UI for better user experience
-- [ ] Add export functionality (CSV, JSON, BibTeX)
-- [ ] Add visualization of bibliometric data
-- [ ] Implement rate limiting and error handling
-- [ ] Add unit tests
+### Completed Previously Planned Features
+
+✅ Caching to avoid duplicate API calls  
+✅ Flutter UI for better user experience  
+✅ Export functionality (CSV, JSON, BibTeX)  
+✅ Visualization of bibliometric data  
+✅ Rate limiting and error handling  
+✅ Unit tests  
+
+### New Development Goals
+
+- [ ] GraphQL API for flexible queries
+- [ ] Machine learning-based result ranking
+- [ ] Multi-language support (i18n)
+- [ ] Advanced analytics dashboard with D3.js
+- [ ] Plugin system for custom data sources
+- [ ] Blockchain-based citation tracking
 
 ## Contributing
 
