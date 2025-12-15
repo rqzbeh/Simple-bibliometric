@@ -110,6 +110,56 @@ streamlit run Simple-bibliometric/app.py
   - Click "Generate interactive network" to render an embedded pyvis visualization.
 - Download filtered GEXF files for use in Gephi or VOSviewer.
 
+- Exports & downloads:
+  - Use the "Exports" section to download the full publications list as CSV, JSON, or BibTeX.
+  - Download the top authors table as CSV (available next to the table).
+  - Export filtered graphs in GEXF format for import into Gephi / VOSviewer.
+
+- Caching & performance:
+  - Use the "Use cached search results" checkbox in the sidebar to avoid duplicate API calls for repeated queries (this reduces API usage and speeds up exploration).
+  - Set "Cache TTL (hours)" to control how long cached results are considered fresh (default: 24 hours).
+  - To clear the cache manually, delete files in the `.cache/` directory, or call `cache_utils.clear_cache()` programmatically.
+
+### API Server (FastAPI)
+
+A small FastAPI-based API is included to make the analysis pipeline available to external UIs (e.g., a Flutter app) and other programmatic consumers.
+
+Quick start:
+```bash
+# install dependencies (additions include fastapi and uvicorn)
+pip install -r requirements.txt
+
+# run the API server locally
+uvicorn api:app --reload --port 8000
+```
+
+Requesting an analysis (POST /analyze):
+
+- URL: `http://localhost:8000/analyze`
+- Method: POST
+- Body (JSON):
+```json
+{
+  "query": "machine learning in healthcare",
+  "max_results": 200,
+  "sources": ["pubmed", "sage"],
+  "use_cache": true,
+  "cache_ttl_hours": 24
+}
+```
+
+Response (JSON) — a summarized, JSON-friendly payload:
+- `n_publications`: integer
+- `top_authors`: list of author summaries (name, n_publications, total_citations, h_index)
+- `time_series`, `forecast`: timeseries and forecast objects
+- `graph_summary`: lightweight graph info (n_nodes, n_edges, sample degrees)
+- `exports`: paths to generated artifacts (GEXF/pyvis HTML) when available
+- `source_errors`: list of (source, error) tuples for any sources that failed during crawling
+
+Notes and recommendations:
+- The current API runs analyses synchronously and will block until completion. For production or long-running jobs, consider moving analyses to background tasks (Celery/RQ) and returning a job id for polling.
+- For secure deployments, add authentication and avoid returning raw filesystem paths; provide controlled file download endpoints instead.
+
 ### Notebook usage (optional)
 
 You can also use these utilities from a Jupyter notebook. Example:

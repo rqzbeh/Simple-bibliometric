@@ -40,7 +40,14 @@ except Exception:
     nx = None
 
 # Local analysis utilities
-from bibliometrics import analyze_field, compute_author_metrics, visualize_pyvis
+from bibliometrics import (
+    analyze_field,
+    compute_author_metrics,
+    publications_to_bibtex_bytes,
+    publications_to_csv_bytes,
+    publications_to_json_bytes,
+    visualize_pyvis,
+)
 
 # Optional: LLM summarization via kubectl Groq/Cerebras fallback (bibliometric_crawler)
 try:
@@ -168,7 +175,12 @@ Return a brief paragraph summary."""
 
 
 def run_analysis_and_render(
-    query: str, sources: List[str], max_results: int, out_dir: str
+    query: str,
+    sources: List[str],
+    max_results: int,
+    out_dir: str,
+    use_cache: bool = True,
+    cache_ttl_hours: int = 24,
 ):
     st.info("Starting analysis. This may take a few minutes for large queries.")
     with st.spinner("Collecting publications and analyzing..."):
@@ -177,6 +189,8 @@ def run_analysis_and_render(
             max_results_per_source=max_results,
             sources=sources,
             output_dir=out_dir,
+            use_cache=use_cache,
+            cache_ttl_hours=cache_ttl_hours,
         )
 
     # Display summary metrics
@@ -184,16 +198,136 @@ def run_analysis_and_render(
     st.markdown(f"- Publications collected: **{result.get('n_publications', 0)}**")
     st.markdown(f"- Outputs written to: **{out_dir}**")
 
-    # Top authors table
+    # Show per-source crawl errors (if any) so users can inspect which sources failed
+    source_errors = result.get("source_errors", [])
+    if source_errors:
+        st.subheader("Source crawl errors")
+        st.warning(
+            "Some sources failed during crawling. Check details below and consider re-running with caching disabled or increasing retries."
+        )
+        try:
+            # Present errors in a tidy table for easier inspection
+            df_err = pd.DataFrame([{"source": s, "error": e} for s, e in source_errors])
+            st.dataframe(df_err)
+        except Exception:
+            # Fallback: plain list if DataFrame rendering fails
+            for s, e in source_errors:
+                st.write(f"- {s}: {e}")
+
+    # Top authors table and visualizations
     st.subheader("Top authors")
     top_authors = result.get("top_authors", [])
     if top_authors:
         df_auth = authors_to_dataframe(top_authors)
-        st.dataframe(df_auth.head(50))
-        csv = df_auth.to_csv(index=False).encode("utf-8")
-        st.download_button("Download top authors CSV", csv, file_name="top_authors.csv")
+
+        # Table + exports in one column, visualizations in the other
+        col_table, col_vis = st.columns([2, 3])
+        with col_table:
+            st.dataframe(df_auth.head(50))
+            csv = df_auth.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "Download top authors CSV", csv, file_name="top_authors.csv"
+            )
+
+        with col_vis:
+            st.markdown("#### Top authors (by publications)")
+            try:
+                fig_pub = px.bar(
+                    df_auth.head(20),
+                    x="author",
+                    y="n_publications",
+                    title="Top authors (publications)",
+                )
+                st.plotly_chart(fig_pub, use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not render publications chart: {e}")
+
+            st.markdown("#### Top authors (by citations)")
+            try:
+                fig_cit = px.bar(
+                    df_auth.head(20),
+                    x="author",
+                    y="total_citations",
+                    title="Top authors (citations)",
+                )
+                st.plotly_chart(fig_cit, use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not render citations chart: {e}")
+
     else:
         st.write("No authors found for this query.")
+
+    # Network diagnostics: degree distribution
+    if graph is not None and nx is not None:
+        st.subheader("Network diagnostics")
+        try:
+            degrees = [d for _, d in graph.degree()]
+            fig_deg = px.histogram(x=degrees, nbins=30, title="Degree distribution")
+            st.plotly_chart(fig_deg, use_container_width=True)
+        except Exception as e:
+            st.warning(f"Could not compute network diagnostics: {e}")
+
+    # Ego-network viewer
+    if graph is not None:
+        st.subheader("Ego network viewer")
+        try:
+            # Candidate list from top authors and graph node display names
+            candidates = []
+            for a in top_authors:
+                name = getattr(a, "name", str(a))
+                if name and name not in candidates:
+                    candidates.append(name)
+            for n, d in graph.nodes(data=True):
+                display = d.get("display_name", n)
+                if display not in candidates:
+                    candidates.append(display)
+
+            selected_author = st.selectbox("Select author to focus", options=candidates)
+            if st.button("Show ego network"):
+                # Attempt to find the matching node id
+                target = None
+                for n, d in graph.nodes(data=True):
+                    if (
+                        str(d.get("display_name", n)) == selected_author
+                        or str(n) == selected_author
+                    ):
+                        target = n
+                        break
+                if target is None:
+                    st.warning("Author not found in the co-authorship network.")
+                else:
+                    try:
+                        ego = nx.ego_graph(graph, target, radius=1)
+                        ego_html = os.path.join(
+                            out_dir,
+                            f"{safe_filename(query)}_ego_{safe_filename(selected_author)}.html",
+                        )
+                        visualize_pyvis(ego, ego_html)
+                        with open(ego_html, "r", encoding="utf-8") as fh:
+                            components.html(fh.read(), height=600, scrolling=True)
+                    except Exception as e:
+                        st.error(f"Could not render ego network: {e}")
+        except Exception as e:
+            st.warning(f"Ego network viewer unavailable: {e}")
+
+    # Exports for publications
+    st.subheader("Exports")
+    publications = result.get("publications", [])
+    if publications:
+        pubs_csv = publications_to_csv_bytes(publications)
+        st.download_button(
+            "Download publications (CSV)", pubs_csv, file_name="publications.csv"
+        )
+        pubs_json = publications_to_json_bytes(publications)
+        st.download_button(
+            "Download publications (JSON)", pubs_json, file_name="publications.json"
+        )
+        pubs_bib = publications_to_bibtex_bytes(publications)
+        st.download_button(
+            "Download publications (BibTeX)", pubs_bib, file_name="publications.bib"
+        )
+    else:
+        st.write("No publications available to export.")
 
     # Time series & forecast
     st.subheader("Publication trend and forecast")
@@ -447,6 +581,12 @@ def main():
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     out_dir = os.path.join(out_root, f"{safe_filename(query)}_{timestamp}")
 
+    # Cache controls (can be disabled for fresh retrievals)
+    use_cache = st.sidebar.checkbox("Use cached search results", value=True)
+    cache_ttl_hours = st.sidebar.number_input(
+        "Cache TTL (hours)", min_value=1, max_value=168, value=24, step=1
+    )
+
     st.sidebar.markdown("---")
     st.sidebar.markdown("Notes:")
     st.sidebar.markdown(
@@ -479,7 +619,14 @@ def main():
             out_dir = tempfile.mkdtemp(prefix="bib_output_")
             st.info(f"Using temporary directory: {out_dir}")
 
-        run_analysis_and_render(query, selected, max_results, out_dir)
+        run_analysis_and_render(
+            query,
+            selected,
+            max_results,
+            out_dir,
+            use_cache=use_cache,
+            cache_ttl_hours=int(cache_ttl_hours),
+        )
 
 
 if __name__ == "__main__":
