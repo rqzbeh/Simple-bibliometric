@@ -119,8 +119,15 @@ pip install -r requirements.txt
 
 **ForceAtlas2 Layout (better network visualization):**
 ```bash
-pip install fa2  # May require C compiler on some systems
+# Requires C compiler and Python dev headers
+# Ubuntu/Debian: sudo apt-get install build-essential python3-dev
+# macOS: xcode-select --install
+pip install fa2
+
+# Or use the optional requirements file:
+pip install -r requirements-optional.txt
 ```
+**Note:** If `fa2` fails to install, the app will automatically fall back to NetworkX's spring layout. This is normal on some platforms.
 
 **RQ for Production Job Queue:**
 ```bash

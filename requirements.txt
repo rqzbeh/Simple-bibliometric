@@ -20,7 +20,9 @@ pmdarima>=1.9.0
 networkx>=3.0
 python-igraph>=0.10.0
 python-louvain>=0.16.0
-fa2>=0.3; python_version < "3.12"
+# fa2>=0.3 - Optional for better network layouts, requires C compiler
+# Install separately if needed: pip install fa2
+# The app falls back to NetworkX spring layout if fa2 is not available
 
 # Visualization & interactive outputs (for VOSviewer/bibliometrix-level visuals)
 pyvis>=0.3.0

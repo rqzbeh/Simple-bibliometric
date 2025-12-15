@@ -1,0 +1,15 @@
+# Optional dependencies for Simple-bibliometric
+# Install these if you need additional features
+
+# ForceAtlas2 layout for better network visualizations
+# Requires: C compiler (gcc/clang), Python development headers
+# On Ubuntu/Debian: sudo apt-get install build-essential python3-dev
+# On macOS: xcode-select --install
+# Note: May not work on all platforms (especially Python 3.12+)
+fa2>=0.3; python_version < "3.12"
+
+# Additional development tools (not needed for production)
+# pytest>=7.0.0
+# flake8>=6.0.0
+# black>=23.0.0
+# mypy>=1.0.0
