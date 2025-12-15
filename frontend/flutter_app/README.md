@@ -2,7 +2,7 @@
 
 This directory contains guidance and a minimal scaffold plan for building a Flutter front-end that interacts with the Simple-bibliometric backend (FastAPI). The goal is to provide a modern, responsive UI (web & mobile) that lets users run bibliometric queries, inspect results, visualize author networks and download exports.
 
-> Note: This README is a scaffold and design guide — it does not include a full Flutter app implementation. The backend API is provided by `Simple-bibliometric/api.py` (FastAPI). See the repo root README for back-end setup details.
+> Note: This directory includes a minimal, runnable Flutter web prototype at `lib/main.dart`. The prototype demonstrates an asynchronous job flow: it enqueues an analysis via `POST /analyze_async`, polls `/jobs/{job_id}`, and displays results (including export download links served from the backend). It's intended for local development and demonstration—ensure the backend API is running and CORS permits requests from the frontend origin. See "Running the included prototype (web)" below for quick start instructions.
 
 ---
 
@@ -31,6 +31,31 @@ A minimal workflow for the Flutter app:
   uvicorn api:app --reload --port 8000
   ```
 - The backend `api` exposes a `POST /analyze` endpoint (see below).
+
+Running the included prototype (web)
+-----------------------------------
+1. Ensure the backend is running and CORS permits your frontend origin (the API is permissive by default during development).
+2. Start the Flutter prototype:
+   ```bash
+   cd frontend/flutter_app
+   # Optionally create a `.env` file to override the API base URL, e.g.:
+   # API_BASE_URL=http://localhost:8000
+   flutter pub get
+   flutter run -d chrome
+   ```
+3. The prototype demonstrates the async flow:
+   - Enqueue an analysis via `POST /analyze_async`
+   - Poll status with `GET /jobs/{job_id}`
+   - When finished, fetch results with `GET /jobs/{job_id}/result`. The response includes `artifact_info` with `download_urls` (mapped to `/artifacts/{artifact_id}/download/{filename}`) and a `download_token` when applicable.
+
+Alternative: Build and serve static web artifacts
+```bash
+cd frontend/flutter_app
+flutter build web
+# Serve the files under build/web/ with your preferred static server
+```
+
+If you need the frontend to talk to a backend running on a different host/port, set `API_BASE_URL` in the `.env` file inside `frontend/flutter_app` (for example `API_BASE_URL=http://localhost:8000`) before running the app.
 
 ---
 

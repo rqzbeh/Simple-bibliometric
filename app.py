@@ -18,6 +18,8 @@ Notes:
  - To enable Cerebras fallback for LLM-based summaries, set CEREBRAS_API_KEY in `.env`.
 """
 
+from __future__ import annotations
+
 import io
 import json
 import os
@@ -27,8 +29,16 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 # Visualization / data libs
-import pandas as pd
-import plotly.express as px
+try:
+    import pandas as pd
+except Exception:
+    pd = None  # type: ignore
+
+try:
+    import plotly.express as px
+except Exception:
+    px = None  # type: ignore
+
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -37,7 +47,7 @@ import streamlit.components.v1 as components
 try:
     import networkx as nx
 except Exception:
-    nx = None
+    nx = None  # type: ignore
 
 # Local analysis utilities
 from bibliometrics import (
@@ -55,7 +65,7 @@ try:
 
     LLM_AVAILABLE = True
 except Exception:
-    BibliometricCrawler = None
+    BibliometricCrawler = None  # type: ignore
     LLM_AVAILABLE = False
 
 
@@ -65,7 +75,7 @@ def safe_filename(s: str) -> str:
     return s[:120]
 
 
-def authors_to_dataframe(authors: List[Any]) -> pd.DataFrame:
+def authors_to_dataframe(authors: List[Any]) -> "pd.DataFrame":
     """Convert list of AuthorMetrics dataclasses to a DataFrame for display."""
     rows = []
     for a in authors:
@@ -79,6 +89,16 @@ def authors_to_dataframe(authors: List[Any]) -> pd.DataFrame:
                 "g_index": getattr(a, "g_index", 0),
             }
         )
+    if pd is None:
+        # Minimal fallback: return a simple structure that streamlit can display
+        try:
+            import pandas as _pd  # type: ignore
+
+            pd = _pd  # type: ignore
+        except Exception:
+            # If pandas is not available return an empty structure
+            return []  # type: ignore
+
     df = pd.DataFrame(rows)
     if not df.empty:
         df = df.sort_values(by=["total_citations", "h_index"], ascending=False)
@@ -86,6 +106,10 @@ def authors_to_dataframe(authors: List[Any]) -> pd.DataFrame:
 
 
 def display_time_series(time_series: Dict[int, int], forecast: Dict[str, Any]):
+    if px is None:
+        st.write("Plotting not available (plotly not installed).")
+        return
+
     df_hist = pd.DataFrame(
         {"year": list(time_series.keys()), "count": list(time_series.values())}
     ).sort_values("year")
@@ -193,6 +217,10 @@ def run_analysis_and_render(
             cache_ttl_hours=cache_ttl_hours,
         )
 
+    # Ensure graph and exports are initialized early so later blocks can reference them
+    graph = result.get("graph")
+    exports = result.get("exports", {})
+
     # Display summary metrics
     st.subheader("Summary")
     st.markdown(f"- Publications collected: **{result.get('n_publications', 0)}**")
@@ -207,8 +235,14 @@ def run_analysis_and_render(
         )
         try:
             # Present errors in a tidy table for easier inspection
-            df_err = pd.DataFrame([{"source": s, "error": e} for s, e in source_errors])
-            st.dataframe(df_err)
+            if pd is not None:
+                df_err = pd.DataFrame(
+                    [{"source": s, "error": e} for s, e in source_errors]
+                )
+                st.dataframe(df_err)
+            else:
+                for s, e in source_errors:
+                    st.write(f"- {s}: {e}")
         except Exception:
             # Fallback: plain list if DataFrame rendering fails
             for s, e in source_errors:
@@ -223,34 +257,37 @@ def run_analysis_and_render(
         # Table + exports in one column, visualizations in the other
         col_table, col_vis = st.columns([2, 3])
         with col_table:
+            if hasattr(df_auth, "to_csv"):
+                csv = df_auth.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "Download top authors CSV", csv, file_name="top_authors.csv"
+                )
             st.dataframe(df_auth.head(50))
-            csv = df_auth.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download top authors CSV", csv, file_name="top_authors.csv"
-            )
 
         with col_vis:
             st.markdown("#### Top authors (by publications)")
             try:
-                fig_pub = px.bar(
-                    df_auth.head(20),
-                    x="author",
-                    y="n_publications",
-                    title="Top authors (publications)",
-                )
-                st.plotly_chart(fig_pub, use_container_width=True)
+                if px is not None:
+                    fig_pub = px.bar(
+                        df_auth.head(20),
+                        x="author",
+                        y="n_publications",
+                        title="Top authors (publications)",
+                    )
+                    st.plotly_chart(fig_pub, use_container_width=True)
             except Exception as e:
                 st.warning(f"Could not render publications chart: {e}")
 
             st.markdown("#### Top authors (by citations)")
             try:
-                fig_cit = px.bar(
-                    df_auth.head(20),
-                    x="author",
-                    y="total_citations",
-                    title="Top authors (citations)",
-                )
-                st.plotly_chart(fig_cit, use_container_width=True)
+                if px is not None:
+                    fig_cit = px.bar(
+                        df_auth.head(20),
+                        x="author",
+                        y="total_citations",
+                        title="Top authors (citations)",
+                    )
+                    st.plotly_chart(fig_cit, use_container_width=True)
             except Exception as e:
                 st.warning(f"Could not render citations chart: {e}")
 
@@ -262,8 +299,9 @@ def run_analysis_and_render(
         st.subheader("Network diagnostics")
         try:
             degrees = [d for _, d in graph.degree()]
-            fig_deg = px.histogram(x=degrees, nbins=30, title="Degree distribution")
-            st.plotly_chart(fig_deg, use_container_width=True)
+            if px is not None:
+                fig_deg = px.histogram(x=degrees, nbins=30, title="Degree distribution")
+                st.plotly_chart(fig_deg, use_container_width=True)
         except Exception as e:
             st.warning(f"Could not compute network diagnostics: {e}")
 
@@ -335,10 +373,9 @@ def run_analysis_and_render(
 
     # Network visualization (pre-generated if available)
     st.subheader("Co-authorship network")
-    exports = result.get("exports", {})
+    # note: `exports` and `graph` are already prepared above
     gexf_path = exports.get("gexf")
     pyvis_path = exports.get("pyvis")
-    graph = result.get("graph")
 
     if pyvis_path and os.path.exists(pyvis_path):
         st.markdown("**Interactive co-authorship network (pre-generated):**")
@@ -399,58 +436,8 @@ def run_analysis_and_render(
         fa2_iters = st.slider(
             "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10
         )
-        spring_iters = st.slider(
-            "Spring layout iterations", min_value=10, max_value=1000, value=50, step=10
-        )
-        force_regen = st.checkbox("Always regenerate (ignore cached HTML)", value=False)
 
-    def _filter_graph(G, min_pubs=1, author_query=None):
-        """Return a filtered copy of G or None if G is None."""
-        if G is None:
-            return None
-        if nx is None:
-            raise RuntimeError(
-                "networkx is required for interactive graph filtering (install `networkx`)."
-            )
-        Gf = G.copy()
-        q = (
-            author_query.strip().lower()
-            if (author_query and author_query.strip())
-            else None
-        )
-        remove = []
-        for n, data in Gf.nodes(data=True):
-            try:
-                if int(data.get("n_pubs", 0) or 0) < int(min_pubs):
-                    remove.append(n)
-                    continue
-            except Exception:
-                # if value not parseable, be conservative and keep the node
-                pass
-            if q:
-                name = str(data.get("display_name", n)).lower()
-                if q not in name and q not in str(n).lower():
-                    remove.append(n)
-        if remove:
-            Gf.remove_nodes_from(remove)
-        # Remove isolates for cleaner visualization
-        try:
-            isolates = list(nx.isolates(Gf))
-            if isolates:
-                Gf.remove_nodes_from(isolates)
-        except Exception:
-            pass
-        return Gf
-
-    def _generate_and_write(
-        Gf,
-        fname_html,
-        fname_gexf,
-        layout,
-        fa2_iterations,
-        spring_iterations,
-        force=False,
-    ):
+    def _generate_and_write(Gf, out_dir, fname_gexf, fname_html, force=False):
         """Write a GEXF and generate a pyvis HTML (cached by filename)."""
         os.makedirs(out_dir, exist_ok=True)
         # Write GEXF (for download) where possible
@@ -463,169 +450,42 @@ def run_analysis_and_render(
         need_gen = force or not os.path.exists(fname_html)
         if need_gen:
             try:
-                visualize_pyvis(
-                    Gf,
-                    fname_html,
-                    notebook=False,
-                    height="800px",
-                    width="100%",
-                    layout=layout,
-                    fa2_iterations=fa2_iterations,
-                    spring_iterations=spring_iterations,
-                    seed=42,
-                )
+                visualize_pyvis(Gf, fname_html)
             except Exception as e:
-                st.error(f"Failed to generate visualization: {e}")
+                st.warning(f"Could not generate HTML visualization: {e}")
                 return None
-        return fname_html
-
-    # Button to (re)generate the interactive network
-    if st.button("Generate interactive network"):
-        if graph is None:
-            st.error(
-                "Graph not available in results. Make sure the analysis completed successfully and pyvis was available."
-            )
-        else:
-            try:
-                filtered = _filter_graph(
-                    graph, min_pubs=min_pubs, author_query=author_search
-                )
-            except Exception as e:
-                st.error(str(e))
-                filtered = None
-
-            if filtered is None or filtered.number_of_nodes() == 0:
-                st.warning(
-                    "No nodes remain after filtering. Try reducing the minimum publications threshold or changing your filters."
-                )
-            else:
-                safe_base = safe_filename(query)
-                html_name = os.path.join(
-                    out_dir,
-                    f"{safe_base}_interactive_{layout_map[layout_choice]}_minpubs-{min_pubs}_fa2iter-{fa2_iters}_spriter-{spring_iters}.html",
-                )
-                gexf_name = os.path.join(out_dir, f"{safe_base}_interactive.gexf")
-
-                # generate (uses cached HTML if present unless force_regen)
-                written_html = _generate_and_write(
-                    filtered,
-                    html_name,
-                    gexf_name,
-                    layout_map[layout_choice],
-                    fa2_iters,
-                    spring_iters,
-                    force=force_regen,
-                )
-
-                if written_html and os.path.exists(written_html):
-                    with open(written_html, "r", encoding="utf-8") as fh:
-                        html = fh.read()
-                    components.html(html, height=800, scrolling=True)
-                    # Offer filtered GEXF for download if available
-                    try:
-                        with open(gexf_name, "rb") as fh:
-                            st.download_button(
-                                "Download filtered GEXF",
-                                fh.read(),
-                                file_name=os.path.basename(gexf_name),
-                            )
-                    except Exception:
-                        pass
-                    st.success(
-                        f"Rendered interactive network (nodes: {filtered.number_of_nodes()}, edges: {filtered.number_of_edges()})"
-                    )
-                else:
-                    st.error(
-                        "Failed to generate the interactive visualization. Check logs for details."
-                    )
-
-    # LLM summary
-    st.subheader("LLM summary")
-    if st.button("Generate natural-language summary (LLM)"):
-        with st.spinner("Generating summary (LLM)..."):
-            summary_text = summarize_with_llm(query, result)
-            st.write(summary_text)
+        return fname_html if os.path.exists(fname_html) else None
 
 
 def main():
-    st.set_page_config(page_title="Simple Bibliometric Explorer", layout="wide")
     st.title("Simple Bibliometric Explorer")
-    st.sidebar.header("Query configuration")
-
-    query = st.sidebar.text_input(
-        "Search query", value="machine learning in healthcare"
+    st.sidebar.header("Query")
+    query = st.sidebar.text_input("Enter a search query", "")
+    sources = st.sidebar.multiselect(
+        "Sources",
+        options=["pubmed", "sage", "pubchem", "gene", "genome", "scopus", "wos"],
+        default=["pubmed", "sage"],
     )
     max_results = st.sidebar.slider(
-        "Max results per source", min_value=10, max_value=2000, value=200, step=10
+        "Max results per source", min_value=10, max_value=1000, value=200, step=10
     )
-    # default sources
-    all_sources = [
-        "pubmed",
-        "sage",
-        "pubchem",
-        "gene",
-        "genome",
-        "scopus",
-        "wos",
-        "springer",
-        "ieee",
-        "eric",
-    ]
-    selected = st.sidebar.multiselect(
-        "Sources to search",
-        options=all_sources,
-        default=["pubmed", "sage", "scopus", "wos"],
-    )
-
-    out_root = st.sidebar.text_input("Output root directory", value="analysis_output")
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    out_dir = os.path.join(out_root, f"{safe_filename(query)}_{timestamp}")
-
-    # Cache controls (can be disabled for fresh retrievals)
     use_cache = st.sidebar.checkbox("Use cached search results", value=True)
     cache_ttl_hours = st.sidebar.number_input(
-        "Cache TTL (hours)", min_value=1, max_value=168, value=24, step=1
+        "Cache TTL (hours)", min_value=1, max_value=168, value=24
     )
+    outdir_override = st.sidebar.text_input("Output directory (optional)", value="")
 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("Notes:")
-    st.sidebar.markdown(
-        "- For authoritative citation metrics provide SCOPUS_API_KEY and/or WOS_API_KEY in .env."
-    )
-    st.sidebar.markdown(
-        "- Use the `inspect_groq_models.py` helper to tune the LLM model if needed."
-    )
-    st.sidebar.markdown(
-        "- ForceAtlas2 layout requires `fa2` package (may need compilation on some platforms)."
-    )
-
-    run = st.sidebar.button("Run analysis")
-    if run:
-        # check for keys for selected sources and warn if missing
-        missing = []
-        if "scopus" in selected and not os.getenv("SCOPUS_API_KEY"):
-            missing.append("SCOPUS_API_KEY")
-        if "wos" in selected and not os.getenv("WOS_API_KEY"):
-            missing.append("WOS_API_KEY")
-        if missing:
-            st.warning(
-                f"Selected sources include keys that are not set in environment: {missing}. Results may be incomplete."
-            )
-
-        try:
-            os.makedirs(out_dir, exist_ok=True)
-        except Exception:
-            st.error(f"Failed to create output dir: {out_dir}")
-            out_dir = tempfile.mkdtemp(prefix="bib_output_")
-            st.info(f"Using temporary directory: {out_dir}")
-
+    if st.sidebar.button("Run analysis") and query.strip():
+        out_dir = outdir_override or os.path.abspath(
+            tempfile.mkdtemp(prefix="bib_streamlit_")
+        )
         run_analysis_and_render(
             query,
-            selected,
+            sources,
             max_results,
             out_dir,
             use_cache=use_cache,
-            cache_ttl_hours=int(cache_ttl_hours),
+            cache_ttl_hours=cache_ttl_hours,
         )
 
 

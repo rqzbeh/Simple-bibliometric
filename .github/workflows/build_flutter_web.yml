@@ -1,0 +1,47 @@
+name: Build Flutter Web
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and publish Flutter web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+
+      - name: Install dependencies & build web (release)
+        working-directory: frontend/flutter_app
+        run: |
+          flutter pub get
+          flutter build web --release
+
+      - name: Commit built web (push to builds/flutter-web branch)
+        env:
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          # Ensure we are on a branch we can push to
+          git config user.name "${GIT_COMMITTER_NAME}"
+          git config user.email "${GIT_COMMITTER_EMAIL}"
+
+          # Create or update branch for build artifacts
+          git checkout -B builds/flutter-web
+
+          # Add the built web artifacts (force in case they are in .gitignore)
+          git add -f frontend/flutter_app/build/web
+
+          # Commit if there are changes
+          git commit -m "chore(flutter): add prebuilt web artifacts [ci]" || echo "No changes to commit"
+
+          # Push the branch with force to update the artifacts branch
+          git push origin builds/flutter-web --force

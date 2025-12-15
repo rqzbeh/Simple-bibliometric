@@ -133,8 +133,7 @@ pip install -r requirements.txt
 uvicorn api:app --reload --port 8000
 ```
 
-Requesting an analysis (POST /analyze):
-
+Synchronous analysis (simple):
 - URL: `http://localhost:8000/analyze`
 - Method: POST
 - Body (JSON):
@@ -147,18 +146,125 @@ Requesting an analysis (POST /analyze):
   "cache_ttl_hours": 24
 }
 ```
+- Response (JSON) — a summarized, JSON-friendly payload:
+  - `n_publications`: integer
+  - `top_authors`: list of author summaries (name, n_publications, total_citations, h_index)
+  - `time_series`, `forecast`: timeseries and forecast objects
+  - `graph_summary`: lightweight graph info (n_nodes, n_edges, sample degrees)
+  - `exports`: paths to generated artifacts (GEXF/pyvis HTML) when available
+  - `source_errors`: list of (source, error) tuples for any sources that failed during crawling
 
-Response (JSON) — a summarized, JSON-friendly payload:
-- `n_publications`: integer
-- `top_authors`: list of author summaries (name, n_publications, total_citations, h_index)
-- `time_series`, `forecast`: timeseries and forecast objects
-- `graph_summary`: lightweight graph info (n_nodes, n_edges, sample degrees)
-- `exports`: paths to generated artifacts (GEXF/pyvis HTML) when available
-- `source_errors`: list of (source, error) tuples for any sources that failed during crawling
+Asynchronous jobs (recommended for long-running analyses):
+To avoid blocking HTTP responses for heavy/long analyses, a background job queue is available. Use the async endpoints to enqueue work and poll for completion.
+
+1) Enqueue an async analysis:
+- POST `http://localhost:8000/analyze_async`
+- Request body: same JSON shape as `/analyze` (query, max_results, sources, use_cache, cache_ttl_hours)
+- Response:
+```json
+{ "job_id": "abcdef123456..." }
+```
+
+Example:
+```bash
+curl -X POST http://localhost:8000/analyze_async \
+  -H "Content-Type: application/json" \
+  -d '{"query":"machine learning in healthcare","max_results":200}'
+```
+
+2) Poll job status:
+- GET `http://localhost:8000/jobs/{job_id}`
+- Response (example):
+```json
+{
+  "id": "abcdef123456",
+  "status": "queued|running|finished|failed",
+  "created_at": "2025-12-14T19:00:00Z",
+  "started_at": "2025-12-14T19:00:05Z",
+  "finished_at": "2025-12-14T19:03:12Z",
+  "error": null,
+  "has_result": true
+}
+```
+
+3) Fetch job result:
+- GET `http://localhost:8000/jobs/{job_id}/result`
+- If job is not finished, the endpoint returns `202 Accepted` with current job status.
+- If job finished successfully, the endpoint returns `200 OK` with the analysis summary (same JSON-friendly format as the synchronous `/analyze` response).
 
 Notes and recommendations:
-- The current API runs analyses synchronously and will block until completion. For production or long-running jobs, consider moving analyses to background tasks (Celery/RQ) and returning a job id for polling.
-- For secure deployments, add authentication and avoid returning raw filesystem paths; provide controlled file download endpoints instead.
+Background workers (RQ + Redis) and secure artifact downloads
+- For small experiments the built-in in-process job manager is convenient. For production you can enable an RQ/Redis worker for resilient, off-process job execution.
+
+Quick steps to enable RQ:
+  1. Install & run Redis (the service that RQ uses as a broker/storage).
+     - Example local URL: `redis://localhost:6379/0`
+  2. Install the Python packages:
+     ```bash
+     pip install rq redis
+     ```
+  3. Configure environment variables:
+     ```bash
+     export BIB_USE_RQ=1
+     export REDIS_URL=redis://localhost:6379/0
+     # Optional: control where job outputs are written
+     export BIB_JOB_OUTPUT_DIR=/path/to/analysis_outputs
+     ```
+  4. Start a worker listening on the queue name used by the app (default: `simple-bib-queue`).
+     Run this from the project root (so the worker can import the `jobs` module):
+     ```bash
+     rq worker simple-bib-queue
+     ```
+     Or:
+     ```bash
+     python -m rq worker simple-bib-queue
+     ```
+
+How the async flow & downloads work
+- Enqueue an async analysis:
+  - `POST http://localhost:8000/analyze_async`
+  - Body: same JSON as `/analyze` (query, max_results, sources, use_cache, cache_ttl_hours)
+  - Response: `{"job_id":"<id>"}`
+
+- Poll job status:
+  - `GET http://localhost:8000/jobs/{job_id}`
+  - Response includes `status` (`queued|running|finished|failed`) and timestamps.
+
+- When finished, fetch the result:
+  - `GET http://localhost:8000/jobs/{job_id}/result`
+  - If finished, the response will include `artifact_info` with `artifact_id`, `download_urls` (mapping of export keys to download URLs), and `download_token` (if a token was issued).
+
+- Artifact endpoints (use the `artifact_id` and token from the job result):
+  - List files: `GET /artifacts/{artifact_id}/files?token=<token>`
+  - Download a file: `GET /artifacts/{artifact_id}/download/{filename}?token=<token>`
+  - Example download flow:
+    ```bash
+    # enqueue
+    curl -X POST http://localhost:8000/analyze_async \
+      -H 'Content-Type: application/json' \
+      -d '{"query":"machine learning"}'
+    # poll status and get artifact info, then download:
+    curl -L "http://localhost:8000/artifacts/<artifact_id>/download/<filename>?token=<token>" -o my_graph.gexf
+    ```
+
+Notes & security recommendations
+- The implementation returns download URLs (and a token) so clients don't receive raw filesystem paths. Tokens are simple by-design and stored in memory in the running process for convenience; for production you should:
+  - Add authentication (API keys / OAuth / session auth)
+  - Use signed URLs or short-lived tokens stored persistently (DB or Redis)
+  - Enforce token TTLs, origin/CORS restrictions, and RBAC as needed
+  - Consider serving large files via a dedicated file server or signed S3 URLs in production
+
+Synchronous `/analyze` note
+- The synchronous `POST /analyze` now also runs the job in a job-friendly wrapper and returns artifact metadata (artifact id + download URLs / token) for immediate downloads if exports are generated.
+
+Flutter prototype
+- There's a small Flutter scaffold under `frontend/flutter_app`. Quick start:
+  ```bash
+  cd frontend/flutter_app
+  flutter pub get
+  flutter run -d chrome   # run the web prototype
+  ```
+- The prototype demonstrates posting to `/analyze_async`, polling `/jobs/{job_id}` and using the returned download URLs to fetch artifacts. See `frontend/flutter_app/README.md` for more details and development tips.
 
 ### Notebook usage (optional)
 
