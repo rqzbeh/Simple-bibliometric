@@ -20,7 +20,7 @@ pmdarima>=1.9.0
 networkx>=3.0
 python-igraph>=0.10.0
 python-louvain>=0.16.0
-fa2>=0.3
+fa2>=0.3; python_version < "3.12"
 
 # Visualization & interactive outputs (for VOSviewer/bibliometrix-level visuals)
 pyvis>=0.3.0
@@ -30,7 +30,7 @@ matplotlib>=3.6.0
 streamlit>=1.26.0
 
 # String matching / disambiguation helpers
-thefuzz>=1.0.0
+thefuzz>=0.22.1
 python-Levenshtein>=0.21.0
 
 # API server (for external UIs / Flutter)

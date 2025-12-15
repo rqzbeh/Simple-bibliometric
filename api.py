@@ -172,6 +172,15 @@ def analyze(req: AnalyzeRequest) -> JSONResponse:
             "exports": result.get("exports", {}),
             "source_errors": result.get("source_errors", []),
         }
+        # Propagate artifact metadata so clients can download exports immediately
+        response.update(
+            {
+                "artifact_id": result.get("artifact_id"),
+                "download_token": result.get("download_token"),
+                "exports_paths": result.get("exports_paths", {}),
+                "_job_output_dir": result.get("_job_output_dir"),
+            }
+        )
         return JSONResponse(content=response)
     except Exception as e:
         logger.exception("Failed to build response for query=%s: %s", req.query, e)
@@ -223,7 +232,15 @@ def job_result(job_id: str):
         return JSONResponse(status_code=202, content={"status": status})
     try:
         res = get_job_result(job_id)
-        return JSONResponse(status_code=200, content=res)
+        artifact_info = {
+            "artifact_id": res.get("artifact_id"),
+            "download_token": res.get("download_token"),
+            "download_urls": res.get("exports", {}),
+            "exports_paths": res.get("exports_paths", {}),
+        }
+        res_with_artifact = dict(res)
+        res_with_artifact["artifact_info"] = artifact_info
+        return JSONResponse(status_code=200, content=res_with_artifact)
     except Exception as e:
         logger.exception("Failed to fetch job result for %s: %s", job_id, e)
         raise HTTPException(status_code=500, detail=f"Failed to fetch result: {e}")
