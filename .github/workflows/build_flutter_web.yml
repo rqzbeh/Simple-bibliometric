@@ -3,6 +3,9 @@ name: Build Flutter Web
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build and publish Flutter web
