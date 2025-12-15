@@ -1,0 +1,36 @@
+[Unit]
+Description=Simple Bibliometric RQ Worker
+After=network.target redis.service
+Requires=redis.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/Simple-bibliometric
+Environment="PATH=/opt/Simple-bibliometric/venv/bin"
+Environment="BIB_USE_RQ=1"
+Environment="REDIS_URL=redis://localhost:6379/0"
+EnvironmentFile=/opt/Simple-bibliometric/.env
+
+# Run RQ worker
+ExecStart=/opt/Simple-bibliometric/venv/bin/rq worker simple-bib-queue \
+    --url redis://localhost:6379/0 \
+    --name worker-%i \
+    --verbose
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=200
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/Simple-bibliometric/analysis_outputs /opt/Simple-bibliometric/.cache
+
+[Install]
+WantedBy=multi-user.target

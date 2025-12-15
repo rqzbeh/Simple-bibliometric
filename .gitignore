@@ -1,5 +1,9 @@
 # Environment files
 .env
+.env.local
+.env.*.local
+deployment/*.env
+!deployment/*.env.example
 
 # Python
 __pycache__/
