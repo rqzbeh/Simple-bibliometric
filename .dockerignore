@@ -1,0 +1,63 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Cache and outputs
+.cache/
+analysis_output/
+bib_output_*/
+*.gexf
+*.html
+!frontend/**/web/*.html
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# Test files (not needed in production)
+test_*.py
+*_test.py
+integration_test.py
+full_crawl_test.py
+debug_*.py
+
+# Temporary files
+tmp/
+temp/
+*.tmp

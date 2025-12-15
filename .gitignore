@@ -1,5 +1,9 @@
 # Environment files
 .env
+.env.local
+.env.*.local
+deployment/*.env
+!deployment/*.env.example
 
 # Python
 __pycache__/
@@ -43,6 +47,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Cache directories
+.cache/
 
 # Analysis outputs and generated visuals
 analysis_output/
