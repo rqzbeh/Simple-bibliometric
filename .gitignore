@@ -15,6 +15,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# But don't ignore Flutter lib directories
+!frontend/**/lib/
 parts/
 sdist/
 var/
