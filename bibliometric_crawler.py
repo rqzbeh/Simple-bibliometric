@@ -587,7 +587,7 @@ Provide your analysis as a JSON object with:
         # Step 1: Analyze query with AI
         print("Step 1: Analyzing query with Groq AI...")
         analysis = self.analyze_user_query(user_query)
-        print(f"Analysis complete:")
+        print("Analysis complete:")
         print(f"  - Search terms: {analysis.get('search_terms', [])}")
         print(f"  - Databases: {analysis.get('databases', [])}")
         print(f"  - Normalized query: {analysis.get('normalized_query', '')}")

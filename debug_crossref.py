@@ -148,7 +148,7 @@ def summarize(items: List[Dict], sage_items: List[Dict], sample: int = 3) -> Non
     """Print a short summary of results and a few SAGE examples."""
     total = len(items)
     total_sage = len(sage_items)
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  - Total CrossRef items returned: {total}")
     print(f"  - Items matching SAGE heuristics: {total_sage}")
 

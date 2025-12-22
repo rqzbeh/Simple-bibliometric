@@ -13,13 +13,15 @@ write small, deterministic artifact files in the specified output directory.
 import os
 import shutil
 import time
+import pytest
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 # Import project modules under test
 try:
     import bibliometrics
     import jobs
-except Exception as e:
+except Exception:
     # If imports fail, tests will be skipped when run directly
     jobs = None  # type: ignore
     bibliometrics = None  # type: ignore
@@ -114,13 +116,10 @@ def test_run_analysis_job_direct():
         assert out_dir and os.path.exists(out_dir)
 
         print("  ✓ run_analysis_job wrote artifacts and registered metadata")
-        return True
     except AssertionError as ae:
-        print("  ✗ Assertion failed:", ae)
-        return False
+        pytest.fail(f"Assertion failed: {ae}")
     except Exception as e:
-        print("  ✗ Exception during test:", e)
-        return False
+        pytest.fail(f"Exception during test: {e}")
     finally:
         # restore
         bibliometrics.analyze_field = orig
@@ -152,9 +151,8 @@ def test_submit_job_inprocess_flow():
             jobs.run_analysis_job, "test_async", 5, ["pubmed"], False, 0
         )
     except Exception as e:
-        print("  ✗ Failed to submit job:", e)
         bibliometrics.analyze_field = orig
-        return False
+        pytest.fail(f"Failed to submit job: {e}")
 
     try:
         # Poll for completion
@@ -168,15 +166,13 @@ def test_submit_job_inprocess_flow():
             time.sleep(0.02)
 
         if not finished:
-            print("  ✗ Job did not finish in time:", info)
-            return False
+            pytest.fail(f"Job did not finish in time: {info}")
 
         # Fetch result
         try:
             result = jobs.get_job_result(job_id, timeout=1)
         except Exception as e:
-            print("  ✗ Failed to retrieve job result:", e)
-            return False
+            pytest.fail(f"Failed to retrieve job result: {e}")
 
         # The in-process backend injects job_id into run_analysis_job, so artifact_id should match job_id
         artifact_id = result.get("artifact_id")
@@ -198,13 +194,10 @@ def test_submit_job_inprocess_flow():
         )
 
         print("  ✓ submit_job (in-process) completed and artifact available")
-        return True
     except AssertionError as ae:
-        print("  ✗ Assertion failed:", ae)
-        return False
+        pytest.fail(f"Assertion failed: {ae}")
     except Exception as e:
-        print("  ✗ Exception during test:", e)
-        return False
+        pytest.fail(f"Exception during test: {e}")
     finally:
         # restore and cleanup
         bibliometrics.analyze_field = orig
@@ -216,6 +209,17 @@ def test_submit_job_inprocess_flow():
         except Exception:
             pass
 
+def test_now_iso_returns_utc_iso():
+    """Regression test ensuring _now_iso returns a timezone-aware UTC ISO string ending with 'Z'."""
+    s = jobs._now_iso()
+    assert isinstance(s, str)
+    assert s.endswith("Z"), f"expected string to end with 'Z', got: {s}"
+    # Parse by replacing Z with +00:00 which fromisoformat understands
+    parsed = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    assert parsed.tzinfo is not None and parsed.tzinfo.utcoffset(parsed).total_seconds() == 0
+    # Ensure timestamp is recent (within 10s)
+    now = datetime.now(timezone.utc)
+    assert abs((now - parsed).total_seconds()) < 10, f"timestamp {parsed} too far from now {now}"
 
 def run_all_tests():
     """Run tests in this file (compat with the project's lightweight test runner)."""

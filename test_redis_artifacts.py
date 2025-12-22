@@ -15,7 +15,7 @@ Notes:
 
 import os
 import shutil
-import time
+import pytest
 
 # Local imports
 try:
@@ -77,12 +77,10 @@ def test_redis_artifact_persistence():
     print("\nTesting Redis-backed artifact persistence...")
 
     if jobs is None or bibliometrics is None:
-        print("  ⚠ Project modules not available; skipping")
-        return True
+        pytest.skip("Project modules not available; skipping")
 
     if fakeredis is None:
-        print("  ⚠ fakeredis not available; skipping Redis persistence tests")
-        return True
+        pytest.skip("fakeredis not available; skipping Redis persistence tests")
 
     # Save original store and replace with a Redis-backed store that uses fakeredis
     orig_store = getattr(jobs, "_ARTIFACT_STORE", None)
@@ -139,16 +137,13 @@ def test_redis_artifact_persistence():
         print(
             "  ✓ Redis-backed artifact persisted and is retrievable after restart simulation"
         )
-        return True
     except AssertionError as ae:
-        print("  ✗ Assertion failed:", ae)
-        return False
+        pytest.fail(f"Assertion failed: {ae}")
     except Exception as e:
-        print("  ✗ Exception during test:", e)
         import traceback
 
         traceback.print_exc()
-        return False
+        pytest.fail(f"Exception during test: {e}")
     finally:
         # restore original analyze and artifact store; cleanup files
         bibliometrics.analyze_field = orig_analyze
@@ -168,16 +163,13 @@ def test_redis_artifact_download_endpoint():
     print("\nTesting artifact download endpoint with Redis persistence...")
 
     if jobs is None or bibliometrics is None or api is None:
-        print("  ⚠ Project modules not available; skipping")
-        return True
+        pytest.skip("Project modules not available; skipping")
 
     if fakeredis is None:
-        print("  ⚠ fakeredis not available; skipping Redis download endpoint test")
-        return True
+        pytest.skip("fakeredis not available; skipping Redis download endpoint test")
 
     if TestClient is None:
-        print("  ⚠ FastAPI TestClient not available; skipping endpoint test")
-        return True
+        pytest.skip("FastAPI TestClient not available; skipping endpoint test")
 
     # Setup fake redis store
     orig_store = getattr(jobs, "_ARTIFACT_STORE", None)
@@ -205,7 +197,7 @@ def test_redis_artifact_download_endpoint():
         artifact_id = data.get("artifact_id")
         token = data.get("download_token")
         exports = data.get("exports", {})
-        exports_paths = data.get("exports_paths", {})
+        _ = data.get("exports_paths", {})
         assert artifact_id and token and exports, (
             "missing artifact info in /analyze response"
         )
@@ -215,8 +207,7 @@ def test_redis_artifact_download_endpoint():
         # Try to download using the returned URL (it includes the token query param)
         r = client.get(gexf_url)
         if r.status_code != 200:
-            print("  ✗ Download endpoint returned:", r.status_code, r.text)
-            return False
+            pytest.fail(f"Download endpoint returned: {r.status_code} {r.text}")
         assert r.content and r.content.startswith(b"<?xml"), (
             "downloaded content not expected"
         )
@@ -230,16 +221,13 @@ def test_redis_artifact_download_endpoint():
         )
 
         print("  ✓ artifact download endpoint works with Redis-backed metadata")
-        return True
     except AssertionError as ae:
-        print("  ✗ Assertion failed:", ae)
-        return False
+        pytest.fail(f"Assertion failed: {ae}")
     except Exception as e:
-        print("  ✗ Exception during endpoint test:", e)
         import traceback
 
         traceback.print_exc()
-        return False
+        pytest.fail(f"Exception during endpoint test: {e}")
     finally:
         bibliometrics.analyze_field = orig_analyze
         if artifact_id:

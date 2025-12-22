@@ -176,6 +176,11 @@ All implementations follow official API documentation:
 - ✅ Standardized output format
 - ✅ Added AI-powered deduplication
 
+### Recent fixes (2025-12-22)
+- ✅ Fixed timezone handling in job manager: `_now_iso()` now returns a timezone-aware UTC ISO timestamp (e.g., 2025-12-22T12:34:56.789012Z) to avoid deprecation and ambiguity. Added `test_now_iso_returns_utc_iso` to prevent regressions.
+- ✅ Reworked test suite to use pytest assertions and skips (replacing return-True/False style) and improved test stability.
+- ✅ Added `ruff` linting and GitHub Actions CI to run tests and lint on push/PR.
+
 ## Testing
 
 All components tested:

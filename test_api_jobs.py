@@ -14,9 +14,11 @@ import shutil
 import time
 from typing import Any, Dict
 
+import pytest
+
 try:
     from fastapi.testclient import TestClient
-except Exception as e:
+except Exception:
     # If TestClient is not available, tests will be skipped gracefully below.
     TestClient = None  # type: ignore
 
@@ -25,7 +27,7 @@ try:
     import api
     import bibliometrics
     import jobs
-except Exception as e:  # pragma: no cover - environment without the package
+except Exception:  # pragma: no cover - environment without the package
     bibliometrics = None  # type: ignore
     jobs = None  # type: ignore
     api = None  # type: ignore
@@ -69,8 +71,7 @@ def test_analyze_sync_and_artifact_download():
     print("\nTesting synchronous /analyze -> artifact download")
 
     if TestClient is None or bibliometrics is None or api is None:
-        print("  ⚠ FastAPI TestClient or project modules not available; skipping")
-        return True
+        pytest.skip("FastAPI TestClient or project modules not available; skipping")
 
     client = TestClient(api.app)
 
@@ -90,8 +91,7 @@ def test_analyze_sync_and_artifact_download():
             },
         )
         if resp.status_code != 200:
-            print("  ✗ /analyze returned non-200:", resp.status_code, resp.text)
-            return False
+            pytest.fail(f"/analyze returned non-200: {resp.status_code} {resp.text}")
 
         data = resp.json()
         print("  ✓ /analyze response keys:", list(data.keys()))
@@ -102,14 +102,11 @@ def test_analyze_sync_and_artifact_download():
         out_dir_to_cleanup = data.get("_job_output_dir")
 
         if not artifact_id:
-            print("  ✗ Missing artifact_id in response")
-            return False
+            pytest.fail("Missing artifact_id in response")
         if not download_token:
-            print("  ✗ Missing download_token in response")
-            return False
+            pytest.fail("Missing download_token in response")
         if "gexf" not in exports or "gexf" not in paths:
-            print("  ✗ Missing gexf export in response")
-            return False
+            pytest.fail("Missing gexf export in response")
 
         gexf_url = exports["gexf"]
         print("  ✓ gexf download URL:", gexf_url)
@@ -117,33 +114,24 @@ def test_analyze_sync_and_artifact_download():
         # Download the file using the returned URL (it already includes token query param)
         r2 = client.get(gexf_url)
         if r2.status_code != 200:
-            print("  ✗ Failed to download gexf:", r2.status_code, r2.text)
-            return False
+            pytest.fail(f"Failed to download gexf: {r2.status_code} {r2.text}")
         content = r2.content.decode("utf-8")
         if "dummy gexf" not in content:
-            print("  ✗ Unexpected gexf content:", content)
-            return False
+            pytest.fail(f"Unexpected gexf content: {content}")
         print("  ✓ gexf content validated")
 
         # Test listing files via /artifacts/{artifact_id}/files (requires token)
         rfiles = client.get(f"/artifacts/{artifact_id}/files?token={download_token}")
         if rfiles.status_code != 200:
-            print("  ✗ Failed to list artifact files:", rfiles.status_code, rfiles.text)
-            return False
+            pytest.fail(f"Failed to list artifact files: {rfiles.status_code} {rfiles.text}")
         flist = rfiles.json().get("files", [])
         if not any("test_coauthorship.gexf" in f for f in flist):
-            print("  ✗ Expected gexf not listed in artifact files:", flist)
-            return False
+            pytest.fail(f"Expected gexf not listed in artifact files: {flist}")
         print("  ✓ artifact files listed:", flist)
 
         print("  ✓ synchronous analyze + artifact download flow works")
-        return True
     except Exception as exc:
-        print("  ✗ Exception during sync analysis test:", exc)
-        import traceback
-
-        traceback.print_exc()
-        return False
+        pytest.fail(f"Exception during sync analysis test: {exc}")
     finally:
         # revert monkeypatch
         bibliometrics.analyze_field = orig_analyze
@@ -165,8 +153,7 @@ def test_analyze_async_job_and_artifact_download():
     print("\nTesting async /analyze_async -> poll jobs -> download artifact")
 
     if TestClient is None or bibliometrics is None or api is None or jobs is None:
-        print("  ⚠ FastAPI TestClient or project modules not available; skipping")
-        return True
+        pytest.skip("FastAPI TestClient or project modules not available; skipping")
 
     client = TestClient(api.app)
 
@@ -187,13 +174,11 @@ def test_analyze_async_job_and_artifact_download():
             },
         )
         if resp.status_code != 200:
-            print("  ✗ /analyze_async returned non-200:", resp.status_code, resp.text)
-            return False
+            pytest.fail(f"/analyze_async returned non-200: {resp.status_code} {resp.text}")
         jinfo = resp.json()
         job_id = jinfo.get("job_id")
         if not job_id:
-            print("  ✗ No job_id returned from /analyze_async")
-            return False
+            pytest.fail("No job_id returned from /analyze_async")
         print("  ✓ job enqueued:", job_id)
 
         # Poll job status until finished (with timeout)
@@ -202,8 +187,7 @@ def test_analyze_async_job_and_artifact_download():
         for _ in range(100):  # up to ~5 seconds (100 * 0.05)
             sj = client.get(status_url)
             if sj.status_code != 200:
-                print("  ✗ Failed to fetch job status:", sj.status_code, sj.text)
-                return False
+                pytest.fail(f"Failed to fetch job status: {sj.status_code} {sj.text}")
             sdata = sj.json()
             if sdata.get("status") == "finished":
                 finished = True
@@ -211,41 +195,31 @@ def test_analyze_async_job_and_artifact_download():
             time.sleep(0.05)
 
         if not finished:
-            print("  ✗ Job did not finish in time; last status:", sdata)
-            return False
+            pytest.fail(f"Job did not finish in time; last status: {sdata}")
         print("  ✓ job finished")
 
         # Fetch job result
         rres = client.get(f"/jobs/{job_id}/result")
         if rres.status_code != 200:
-            print(
-                "  ✗ /jobs/{job_id}/result returned non-200:",
-                rres.status_code,
-                rres.text,
-            )
-            return False
+            pytest.fail(f"/jobs/{{job_id}}/result returned non-200: {rres.status_code} {rres.text}")
         resdata = rres.json()
         artifact_info = resdata.get("artifact_info", {})
         if not artifact_info:
-            print("  ✗ No artifact_info present in job result:", resdata.keys())
-            return False
+            pytest.fail(f"No artifact_info present in job result: {resdata.keys()}")
         download_urls = artifact_info.get("download_urls", {})
-        token = artifact_info.get("download_token")
+        _token = artifact_info.get("download_token")
         if "gexf" not in download_urls:
-            print("  ✗ gexf not present in download_urls:", download_urls)
-            return False
+            pytest.fail(f"gexf not present in download_urls: {download_urls}")
         gexf_url = download_urls["gexf"]
         print("  ✓ gexf download URL:", gexf_url)
 
         # Download artifact
         rdown = client.get(gexf_url)
         if rdown.status_code != 200:
-            print("  ✗ Failed to download artifact:", rdown.status_code, rdown.text)
-            return False
+            pytest.fail(f"Failed to download artifact: {rdown.status_code} {rdown.text}")
         content = rdown.content.decode("utf-8")
         if "dummy gexf" not in content:
-            print("  ✗ Unexpected artifact content:", content)
-            return False
+            pytest.fail(f"Unexpected artifact content: {content}")
         print("  ✓ artifact downloaded and content validated")
 
         # Determine output_dir for cleanup (job result includes _job_output_dir)
@@ -253,13 +227,8 @@ def test_analyze_async_job_and_artifact_download():
         print("  ✓ cleanup dir:", out_dir_to_cleanup)
 
         print("  ✓ async job flow + artifact download works")
-        return True
     except Exception as exc:
-        print("  ✗ Exception during async analysis test:", exc)
-        import traceback
-
-        traceback.print_exc()
-        return False
+        pytest.fail(f"Exception during async analysis test: {exc}")
     finally:
         # revert monkeypatch
         bibliometrics.analyze_field = orig_analyze
