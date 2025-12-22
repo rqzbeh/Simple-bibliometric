@@ -38,7 +38,7 @@ import threading
 import traceback
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger("simple_bibliometric.jobs")
 logger.addHandler(logging.NullHandler())
@@ -62,7 +62,8 @@ STATUS_CANCELLED = "cancelled"
 
 
 def _now_iso() -> str:
-    return datetime.datetime.utcnow().isoformat() + "Z"
+    # Use timezone-aware UTC timestamp to avoid deprecation and ensure clarity
+    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class JobNotFoundError(KeyError):

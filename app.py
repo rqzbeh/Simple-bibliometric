@@ -20,12 +20,9 @@ Notes:
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import tempfile
-import time
-from datetime import datetime
 from typing import Any, Dict, List
 
 # Visualization / data libs
@@ -52,7 +49,6 @@ except Exception:
 # Local analysis utilities
 from bibliometrics import (
     analyze_field,
-    compute_author_metrics,
     publications_to_bibtex_bytes,
     publications_to_csv_bytes,
     publications_to_json_bytes,
@@ -77,6 +73,7 @@ def safe_filename(s: str) -> str:
 
 def authors_to_dataframe(authors: List[Any]) -> "pd.DataFrame":
     """Convert list of AuthorMetrics dataclasses to a DataFrame for display."""
+    global pd
     rows = []
     for a in authors:
         # AuthorMetrics dataclass has fields name, n_publications, total_citations, h_index, g_index
@@ -374,7 +371,7 @@ def run_analysis_and_render(
     # Network visualization (pre-generated if available)
     st.subheader("Co-authorship network")
     # note: `exports` and `graph` are already prepared above
-    gexf_path = exports.get("gexf")
+    _gexf_path = exports.get("gexf")
     pyvis_path = exports.get("pyvis")
 
     if pyvis_path and os.path.exists(pyvis_path):
@@ -410,16 +407,16 @@ def run_analysis_and_render(
             max_n_pubs = 1
 
     with left_col:
-        min_pubs = st.slider(
+        _min_pubs = st.slider(
             "Minimum publications per author",
             min_value=1,
             max_value=max_n_pubs,
             value=1,
         )
-        author_search = st.text_input("Author name contains (filter)", value="")
+        _author_search = st.text_input("Author name contains (filter)", value="")
 
     with right_col:
-        layout_choice = st.selectbox(
+        _layout_choice = st.selectbox(
             "Layout method",
             options=[
                 "Auto (fa2 if available)",
@@ -428,12 +425,12 @@ def run_analysis_and_render(
             ],
             index=0,
         )
-        layout_map = {
+        _layout_map = {
             "Auto (fa2 if available)": "auto",
             "ForceAtlas2 (fa2)": "fa2",
             "Spring (networkx)": "spring",
         }
-        fa2_iters = st.slider(
+        _fa2_iters = st.slider(
             "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10
         )
 

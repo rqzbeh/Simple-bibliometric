@@ -8,7 +8,6 @@ import random
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlencode
 
 import requests
 
@@ -1412,7 +1411,7 @@ class WileyCrawler(BaseCrawler):
             headers = self._get_headers()
             headers["Wiley-TDM-Client-Token"] = self.api_key
 
-            params = {"query": query, "max": min(max_results, 100)}
+            _params = {"query": query, "max": min(max_results, 100)}
 
             # Note: Actual endpoint structure depends on access type
             print("[Wiley] Note: Requires institutional access for full functionality")

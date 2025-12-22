@@ -30,14 +30,14 @@ from dotenv import load_dotenv
 # Load environment variables (if .env exists)
 load_dotenv()
 
-from crawlers import (
+from crawlers import (  # noqa: E402  (deferred import after dotenv.load_dotenv to ensure env vars are available)
     BIOPYTHON_AVAILABLE,
     CROSSREF_AVAILABLE,
     PUBCHEMPY_AVAILABLE,
     PubChemCrawler,
     PubMedCrawler,
     SAGECrawler,
-)
+)  # noqa: E402  (deferred import after dotenv.load_dotenv to ensure env vars are available)
 
 
 def _print_header(title: str):

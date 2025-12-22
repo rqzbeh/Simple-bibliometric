@@ -5,12 +5,12 @@ These tests verify the structure and basic functionality without requiring API k
 
 import os
 import sys
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from crawlers import (
-    BaseCrawler,
     EBSCOCrawler,
     ERICCrawler,
     GeneCrawler,
@@ -55,10 +55,7 @@ def test_crawler_instantiation():
             assert hasattr(crawler, "base_url")
             print(f"  ✓ {crawler_class.__name__} instantiated successfully")
         except Exception as e:
-            print(f"  ✗ {crawler_class.__name__} failed: {e}")
-            return False
-
-    return True
+            pytest.fail(f"{crawler_class.__name__} failed: {e}")
 
 
 def test_crawler_search_method():
@@ -77,10 +74,7 @@ def test_crawler_search_method():
             assert isinstance(results, list)
             print(f"  ✓ {name} search method works (returned {len(results)} results)")
         except Exception as e:
-            print(f"  ✗ {name} search method failed: {e}")
-            return False
-
-    return True
+            pytest.fail(f"{name} search method failed: {e}")
 
 
 def test_base_crawler_methods():
@@ -103,8 +97,6 @@ def test_base_crawler_methods():
     assert "Accept" in headers2
     print("  ✓ Headers work without API key")
 
-    return True
-
 
 def test_bibliometric_crawler_without_api():
     """Test that BibliometricCrawler can be imported (but not run without API key)"""
@@ -116,10 +108,8 @@ def test_bibliometric_crawler_without_api():
 
         assert hasattr(bibliometric_crawler, "BibliometricCrawler")
         print("  ✓ BibliometricCrawler module imports successfully")
-        return True
     except ImportError as e:
-        print(f"  ✗ Failed to import: {e}")
-        return False
+        pytest.fail(f"Failed to import: {e}")
 
 
 def test_optional_package_flags():
@@ -129,8 +119,7 @@ def test_optional_package_flags():
     try:
         import crawlers
     except Exception as e:
-        print(f"  ✗ Failed to import crawlers module: {e}")
-        return False
+        pytest.fail(f"Failed to import crawlers module: {e}")
 
     flags = [
         "PUBCHEMPY_AVAILABLE",
@@ -146,10 +135,7 @@ def test_optional_package_flags():
             assert isinstance(val, bool)
             print(f"  ✓ {f} present and is boolean: {val}")
         except Exception as e:
-            print(f"  ✗ {f} not present or not boolean: {e}")
-            return False
-
-    return True
+            pytest.fail(f"{f} not present or not boolean: {e}")
 
 
 def test_visualize_pyvis_html_generation():
@@ -164,16 +150,13 @@ def test_visualize_pyvis_html_generation():
         try:
             from pyvis.network import Network  # noqa: F401
         except Exception as e:
-            print(f"  ⚠ pyvis not available; skipping visualize_pyvis test: {e}")
-            return True
+            pytest.skip(f"pyvis not available; skipping visualize_pyvis test: {e}")
         try:
             import networkx as nx  # type: ignore
         except Exception as e:
-            print(f"  ⚠ networkx not available; skipping visualize_pyvis test: {e}")
-            return True
+            pytest.skip(f"networkx not available; skipping visualize_pyvis test: {e}")
     except Exception as e:
-        print(f"  ✗ Required modules not available: {e}")
-        return False
+        pytest.skip(f"Required modules not available: {e}")
 
     # Build a minimal graph
     G = nx.Graph()
@@ -184,17 +167,14 @@ def test_visualize_pyvis_html_generation():
     tmpdir = tempfile.mkdtemp(prefix="test_viz_")
     out_html = os.path.join(tmpdir, "test_vis.html")
     try:
-        res = visualize_pyvis(
+        visualize_pyvis(
             G, out_html, notebook=False, layout="spring", spring_iterations=10, seed=1
         )
         if not os.path.exists(out_html):
-            print("  ✗ visualize_pyvis did not write the expected HTML file.")
-            return False
+            pytest.fail("visualize_pyvis did not write the expected HTML file.")
         print("  ✓ visualize_pyvis wrote HTML:", out_html)
-        return True
     except Exception as e:
-        print(f"  ✗ visualize_pyvis failed: {e}")
-        return False
+        pytest.fail(f"visualize_pyvis failed: {e}")
 
 
 def test_jobs_inprocess_basic():
@@ -203,8 +183,7 @@ def test_jobs_inprocess_basic():
     try:
         from jobs import InProcessBackend
     except Exception as e:
-        print(f"  ⚠ InProcessBackend not available; skipping: {e}")
-        return True
+        pytest.skip(f"InProcessBackend not available; skipping: {e}")
 
     backend = InProcessBackend(max_workers=1)
 
@@ -215,8 +194,7 @@ def test_jobs_inprocess_basic():
     try:
         job_id = backend.submit(_add, 1, 2)
     except Exception as e:
-        print(f"  ✗ Failed to submit job to InProcessBackend: {e}")
-        return False
+        pytest.fail(f"Failed to submit job to InProcessBackend: {e}")
 
     finished = False
     import time
@@ -229,20 +207,16 @@ def test_jobs_inprocess_basic():
         time.sleep(0.05)
 
     if not finished:
-        print(f"  ✗ Job did not finish in time: {info}")
-        return False
+        pytest.fail(f"Job did not finish in time: {info}")
 
     try:
         res = backend.result(job_id, timeout=1)
         if res == 3:
             print("  ✓ in-process job backend (direct) works")
-            return True
         else:
-            print(f"  ✗ Unexpected job result: {res}")
-            return False
+            pytest.fail(f"Unexpected job result: {res}")
     except Exception as e:
-        print(f"  ✗ Failed to retrieve job result from InProcessBackend: {e}")
-        return False
+        pytest.fail(f"Failed to retrieve job result from InProcessBackend: {e}")
 
 
 def test_cache_utils_basic():
@@ -251,8 +225,7 @@ def test_cache_utils_basic():
     try:
         import cache_utils
     except Exception as e:
-        print(f"  ⚠ cache_utils not available; skipping cache tests: {e}")
-        return True
+        pytest.skip(f"cache_utils not available; skipping cache tests: {e}")
 
     # Ensure a clean slate
     try:
@@ -267,8 +240,7 @@ def test_cache_utils_basic():
         assert v == {"a": 1}
         print("  ✓ cache set/get works")
     except Exception as e:
-        print(f"  ✗ cache set/get failed: {e}")
-        return False
+        pytest.fail(f"cache set/get failed: {e}")
 
     try:
         cache_utils.clear_cache()
@@ -276,10 +248,7 @@ def test_cache_utils_basic():
         assert v2 is None
         print("  ✓ cache clear works")
     except Exception as e:
-        print(f"  ✗ cache clear failed: {e}")
-        return False
-
-    return True
+        pytest.fail(f"cache clear failed: {e}")
 
 
 def run_all_tests():
