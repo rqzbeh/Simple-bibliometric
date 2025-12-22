@@ -53,6 +53,7 @@ from bibliometrics import (
     publications_to_csv_bytes,
     publications_to_json_bytes,
     visualize_pyvis,
+    compute_author_metrics,
 )
 
 # Optional: LLM summarization via kubectl Groq/Cerebras fallback (bibliometric_crawler)
@@ -204,19 +205,94 @@ def run_analysis_and_render(
     cache_ttl_hours: int = 24,
 ):
     st.info("Starting analysis. This may take a few minutes for large queries.")
+    # Option: use AI-driven query analysis and filtering pipeline (Groq + optional AI fallbacks)
+    use_ai = False
+    try:
+        use_ai = LLM_AVAILABLE and st.checkbox("Use AI (Groq) for analysis & filtering", value=bool(os.getenv("GROQ_API_KEY")))
+    except Exception:
+        use_ai = False
+
     with st.spinner("Collecting publications and analyzing..."):
-        result = analyze_field(
-            query,
-            max_results_per_source=max_results,
-            sources=sources,
-            output_dir=out_dir,
-            use_cache=use_cache,
-            cache_ttl_hours=cache_ttl_hours,
-        )
+        if use_ai:
+            # Use AI pipeline
+            try:
+                bc = BibliometricCrawler()
+            except Exception as e:
+                st.error(f"Could not initialize AI client: {e}")
+                return
+
+            try:
+                processed = bc.process_query(query, max_results)
+            except Exception as e:
+                st.error(f"AI analysis failed: {e}")
+                return
+
+            # Flatten raw results into publications list and de-duplicate by normalized title
+            raw = processed.get("raw_results", {})
+            pubs = []
+            seen = set()
+            from bibliometrics import _normalize_title
+
+            for db_name, items in raw.items():
+                for p in items:
+                    t = _normalize_title(p.get("title", ""))
+                    if t in seen:
+                        continue
+                    seen.add(t)
+                    pubs.append(p)
+
+            result = {
+                "query": query,
+                "n_publications": processed.get("total_results", len(pubs)),
+                "publications": pubs,
+                "top_authors": [],
+                "graph": None,
+                "exports": {},
+                "time_series": {},
+                "forecast": {},
+                "filtering_guidance": processed.get("filtering_guidance"),
+                "analysis_provider": processed.get("analysis_provider"),
+                "filtering_provider": processed.get("filtering_provider"),
+            }
+
+            # Compute authors, graph and basic stats from flattened pubs
+            try:
+                authors = compute_author_metrics(pubs)
+                result["top_authors"] = authors
+            except Exception:
+                result["top_authors"] = []
+            try:
+                from bibliometrics import build_coauthorship_graph, publications_per_year, forecast_publications_linear
+
+                G = build_coauthorship_graph(pubs)
+                result["graph"] = G
+                result["time_series"] = publications_per_year(pubs)
+                result["forecast"] = forecast_publications_linear(result["time_series"], periods=5)
+            except Exception:
+                pass
+        else:
+            result = analyze_field(
+                query,
+                max_results_per_source=max_results,
+                sources=sources,
+                output_dir=out_dir,
+                use_cache=use_cache,
+                cache_ttl_hours=cache_ttl_hours,
+            )
 
     # Ensure graph and exports are initialized early so later blocks can reference them
     graph = result.get("graph")
     exports = result.get("exports", {})
+
+    # Display AI provider info when available
+    ap = result.get("analysis_provider")
+    fp = result.get("filtering_provider")
+    if ap or fp:
+        st.subheader("AI Providers (traceability)")
+        if ap:
+            st.markdown(f"- Analysis provider: **{ap.get('provider')}** (model: `{ap.get('model')}`)")
+        if fp:
+            st.markdown(f"- Filtering provider: **{fp.get('provider')}** (model: `{fp.get('model')}`)")
 
     # Display summary metrics
     st.subheader("Summary")
@@ -245,11 +321,68 @@ def run_analysis_and_render(
             for s, e in source_errors:
                 st.write(f"- {s}: {e}")
 
+    # ---- Interactive exploration controls ----
+    st.markdown("**Interactive exploration**")
+    left_col, right_col = st.columns([2, 1])
+
+    # Determine a reasonable upper bound for the minimum-publications slider
+    max_n_pubs = 1
+    if graph is not None:
+        try:
+            max_n_pubs = max(
+                (int(d.get("n_pubs", 0) or 0) for _, d in graph.nodes(data=True)),
+                default=1,
+            )
+            max_n_pubs = max(1, max_n_pubs)
+        except Exception:
+            max_n_pubs = 1
+
+    with left_col:
+        slider_max = max(2, int(max_n_pubs))
+        min_pubs = st.slider(
+            "Minimum publications per author",
+            min_value=1,
+            max_value=slider_max,
+            value=1,
+        )
+        _author_search = st.text_input("Author name contains (filter)", value="")
+
+    with right_col:
+        _layout_choice = st.selectbox(
+            "Layout method",
+            options=[
+                "Auto (fa2 if available)",
+                "ForceAtlas2 (fa2)",
+                "Spring (networkx)",
+            ],
+            index=0,
+        )
+        _layout_map = {
+            "Auto (fa2 if available)": "auto",
+            "ForceAtlas2 (fa2)": "fa2",
+            "Spring (networkx)": "spring",
+        }
+        _fa2_iters = st.slider(
+            "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10
+        )
+
     # Top authors table and visualizations
     st.subheader("Top authors")
     top_authors = result.get("top_authors", [])
+
+    # Apply interactive filters to top authors
     if top_authors:
-        df_auth = authors_to_dataframe(top_authors)
+        filtered_authors = []
+        for a in top_authors:
+            try:
+                n_pubs = int(getattr(a, "n_publications", getattr(a, "n_pubs", 0)) or 0)
+            except Exception:
+                n_pubs = 0
+            name = str(getattr(a, "name", a))
+            if n_pubs >= min_pubs and (_author_search.strip().lower() in name.lower()):
+                filtered_authors.append(a)
+
+        df_auth = authors_to_dataframe(filtered_authors)
 
         # Table + exports in one column, visualizations in the other
         col_table, col_vis = st.columns([2, 3])
@@ -407,10 +540,11 @@ def run_analysis_and_render(
             max_n_pubs = 1
 
     with left_col:
-        _min_pubs = st.slider(
+        slider_max = max(2, int(max_n_pubs))
+        min_pubs = st.slider(
             "Minimum publications per author",
             min_value=1,
-            max_value=max_n_pubs,
+            max_value=slider_max,
             value=1,
         )
         _author_search = st.text_input("Author name contains (filter)", value="")

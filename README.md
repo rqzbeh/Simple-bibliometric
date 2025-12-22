@@ -54,7 +54,7 @@ uvicorn api:app --reload
 ## ✨ Features
 
 ### Core Capabilities
-- **🤖 AI-Powered Query Analysis**: Uses Groq AI (with Cerebras fallback) to understand user queries and determine optimal search strategies
+- **🤖 AI-Powered Query Analysis**: Uses Groq AI as the primary provider, with optional fallbacks to Cerebras and Cloudflare. The pipeline enforces an AI-only policy and will raise an error if no AI provider returns a valid JSON analysis.
 - **📚 Multi-Database Support**: Crawls data from 13 academic sources with **actual API implementations**:
   - Web of Science (WoS) - Clarivate API
   - Scopus - Elsevier API
@@ -192,6 +192,16 @@ WILEY_API_KEY=your_wiley_key        # Wiley
 # Cerebras Fallback (optional)
 CEREBRAS_API_KEY=your_cerebras_key
 CEREBRAS_MODEL=llama-3.3-70b
+
+# Cloudflare AI (optional fallback)
+# If Groq fails, the crawler can optionally call Cloudflare's AI endpoint as a secondary AI-only fallback.
+CLOUDFLARE_API_TOKEN=your_cloudflare_token
+CLOUDFLARE_AI_ENDPOINT=https://api.cloudflare.com/your/endpoint
+CLOUDFLARE_MODEL=gpt-4o
+
+# AI-only behavior
+# The pipeline enforces an AI-only analysis and filtering policy: Groq is required as the primary provider, and Cerebras/Cloudflare are
+# optional fallbacks. The system will raise an explicit error if no AI provider returns valid JSON analysis or filtering guidance.
 ```
 
 ### Production Configuration
