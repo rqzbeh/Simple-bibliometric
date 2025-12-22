@@ -162,6 +162,7 @@ class BibliometricCrawler:
                 max_tokens=1000,
             )
 
+        last_exc = None
         try:
             response = _call_chat_model(self.groq_model)
             analysis_text = response.choices[0].message.content
@@ -179,37 +180,32 @@ class BibliometricCrawler:
                     analysis_text = analysis_text[json_start:json_end]
 
                 analysis = json.loads(analysis_text.strip())
-            except json.JSONDecodeError:
-                # Fallback: create a basic analysis
-                analysis = {
-                    "search_terms": [user_query],
-                    "databases": list(self.crawlers.keys()),
-                    "filters": {},
-                    "normalized_query": user_query,
-                }
+                # Record provider metadata
+                analysis["_ai_provider"] = {"provider": "groq", "model": model_name}
+            except json.JSONDecodeError as je:
+                # Do not fall back to non-AI behavior; raise an explicit error
+                raise RuntimeError(f"Groq returned non-JSON analysis: {je}") from je
 
             return analysis
 
         except Exception as e:
+            # Record last exception for debugging/reporting
+            last_exc = e
             err_str = str(e)
-            # If the model has been decommissioned attempt automatic fallback selection and retry
+
+            # If the error indicates a decommissioned Groq model, attempt to select and use a fallback Groq model
             if "model_decommissioned" in err_str or "decommissioned" in err_str:
-                print(
-                    "Groq model appears to be decommissioned. Attempting to select an alternative model..."
-                )
-                fallback_model = None
                 try:
                     fallback_model = self._select_and_set_fallback_groq_model()
                 except Exception as ex:
                     print(f"[Groq] Error while selecting fallback model: {ex}")
-
-                if fallback_model:
-                    try:
-                        response = _call_chat_model(self.groq_model)
-                        analysis_text = response.choices[0].message.content
-
-                        # Try to extract JSON from the response
+                else:
+                    if fallback_model:
                         try:
+                            response = _call_chat_model(self.groq_model)
+                            analysis_text = response.choices[0].message.content
+
+                            # Try to extract JSON from the response
                             if "```json" in analysis_text:
                                 json_start = analysis_text.find("```json") + 7
                                 json_end = analysis_text.find("```", json_start)
@@ -220,85 +216,96 @@ class BibliometricCrawler:
                                 analysis_text = analysis_text[json_start:json_end]
 
                             analysis = json.loads(analysis_text.strip())
-                        except json.JSONDecodeError:
-                            analysis = {
-                                "search_terms": [user_query],
-                                "databases": list(self.crawlers.keys()),
-                                "filters": {},
-                                "normalized_query": user_query,
-                            }
+                            analysis["_ai_provider"] = {"provider": "groq", "model": self.groq_model}
+                            return analysis
+                        except json.JSONDecodeError as je:
+                            # Do not fall back to non-AI behavior; raise an explicit error
+                            raise RuntimeError(f"Groq fallback returned non-JSON analysis: {je}") from je
+                        except Exception as e2:
+                            print(f"[Groq] Retry with fallback model {self.groq_model} failed: {e2}")
 
-                        return analysis
-                    except Exception as e2:
-                        print(
-                            f"[Groq] Retry with fallback model {self.groq_model} failed: {e2}"
-                        )
-                else:
-                    print("[Groq] No suitable fallback model could be selected.")
-                    # Attempt Cerebras fallback if available and the user has provided a key
-                    if CEREBRAS_AVAILABLE and os.getenv("CEREBRAS_API_KEY"):
+            # Attempt Cerebras fallback if available and the user has provided a key
+            if CEREBRAS_AVAILABLE and os.getenv("CEREBRAS_API_KEY"):
+                try:
+                    cb_model = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
+                    cb_client = Cerebras(api_key=os.getenv("CEREBRAS_API_KEY"))
+                    cb_response = cb_client.chat.completions.create(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_query},
+                        ],
+                        model=cb_model,
+                        temperature=0.3,
+                        max_tokens=1000,
+                    )
+                    # Extract content from Cerebras response (robust extraction)
+                    cb_text = None
+                    try:
+                        cb_text = cb_response.choices[0].message.content
+                    except Exception:
                         try:
-                            cb_model = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
-                            cb_client = Cerebras(api_key=os.getenv("CEREBRAS_API_KEY"))
-                            cb_response = cb_client.chat.completions.create(
-                                messages=[
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_query},
-                                ],
-                                model=cb_model,
-                                temperature=0.3,
-                                max_tokens=1000,
+                            cb_text = (
+                                cb_response.get("choices", [])[0]
+                                .get("message", {})
+                                .get("content", "")
                             )
-                            # Extract content from Cerebras response (robust extraction)
-                            cb_text = None
-                            try:
-                                cb_text = cb_response.choices[0].message.content
-                            except Exception:
-                                try:
-                                    cb_text = (
-                                        cb_response.get("choices", [])[0]
-                                        .get("message", {})
-                                        .get("content", "")
-                                    )
-                                except Exception:
-                                    cb_text = str(cb_response)
-                            if cb_text:
-                                # Try to parse JSON embedded in code block (same parsing as for Groq)
-                                analysis_text = cb_text
-                                try:
-                                    if "```json" in analysis_text:
-                                        json_start = analysis_text.find("```json") + 7
-                                        json_end = analysis_text.find("```", json_start)
-                                        analysis_text = analysis_text[
-                                            json_start:json_end
-                                        ]
-                                    elif "```" in analysis_text:
-                                        json_start = analysis_text.find("```") + 3
-                                        json_end = analysis_text.find("```", json_start)
-                                        analysis_text = analysis_text[
-                                            json_start:json_end
-                                        ]
-                                    analysis = json.loads(analysis_text.strip())
-                                except Exception:
-                                    analysis = {
-                                        "search_terms": [user_query],
-                                        "databases": list(self.crawlers.keys()),
-                                        "filters": {},
-                                        "normalized_query": user_query,
-                                    }
-                                return analysis
-                        except Exception as ecb:
-                            print(f"[Cerebras] Fallback failed: {ecb}")
-            else:
-                print(f"Error analyzing query with Groq AI: {e}")
+                        except Exception:
+                            cb_text = str(cb_response)
+                    if cb_text:
+                        # Try to parse JSON embedded in code block (same parsing as for Groq)
+                        analysis_text = cb_text
+                        try:
+                            if "```json" in analysis_text:
+                                json_start = analysis_text.find("```json") + 7
+                                json_end = analysis_text.find("```", json_start)
+                                analysis_text = analysis_text[json_start:json_end]
+                            elif "```" in analysis_text:
+                                json_start = analysis_text.find("```") + 3
+                                json_end = analysis_text.find("```", json_start)
+                                analysis_text = analysis_text[json_start:json_end]
+                            analysis = json.loads(analysis_text.strip())
+                            analysis["_ai_provider"] = {"provider": "cerebras", "model": cb_model}
+                            return analysis
+                        except Exception as ecb_inner:
+                            print(f"[Cerebras] parsing failed: {ecb_inner}")
+                            last_exc = ecb_inner
+                except Exception as ecb:
+                    print(f"[Cerebras] Fallback failed: {ecb}")
 
-            # Return a basic analysis as fallback
-            return {
-                "search_terms": [user_query],
-                "databases": list(self.crawlers.keys()),
-                "filters": {},
-                "normalized_query": user_query,
-            }
+            # Try Cloudflare AI as an AI-only fallback
+            cf_endpoint = os.getenv("CLOUDFLARE_AI_ENDPOINT")
+            cf_token = os.getenv("CLOUDFLARE_API_TOKEN")
+            if cf_endpoint and cf_token:
+                try:
+                    import requests
+
+                    headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
+                    payload = {"messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_query}], "model": os.getenv("CLOUDFLARE_MODEL", "gpt-4o")}
+                    r = requests.post(cf_endpoint, headers=headers, json=payload, timeout=30)
+                    r.raise_for_status()
+                    resp_json = r.json()
+                    cf_text = None
+                    try:
+                        cf_text = resp_json.get("choices", [])[0].get("message", {}).get("content")
+                    except Exception:
+                        cf_text = resp_json.get("text") or str(resp_json)
+                    if cf_text:
+                        if "```json" in cf_text:
+                            json_start = cf_text.find("```json") + 7
+                            json_end = cf_text.find("```", json_start)
+                            cf_text = cf_text[json_start:json_end]
+                        elif "```" in cf_text:
+                            json_start = cf_text.find("```") + 3
+                            json_end = cf_text.find("```", json_start)
+                            cf_text = cf_text[json_start:json_end]
+                        analysis = json.loads(cf_text.strip())
+                        analysis["_ai_provider"] = {"provider": "cloudflare", "model": os.getenv("CLOUDFLARE_MODEL", "gpt-4o")}
+                        return analysis
+                except Exception as ecf:
+                    print(f"[Cloudflare AI] Fallback failed: {ecf}")
+
+            # No non-AI fallback allowed — raise an explicit error indicating AI failure
+            raise RuntimeError(f"AI providers failed to produce analysis: {last_exc}") from last_exc
 
     def crawl_databases(
         self, analysis: Dict[str, Any], max_results: int = 100
@@ -367,6 +374,7 @@ Provide your analysis as a JSON object with:
 - recommended_filters: any filters to apply"""
 
         try:
+            last_exc = None
             response = self.groq_client.chat.completions.create(
                 messages=[
                     {
@@ -396,17 +404,9 @@ Provide your analysis as a JSON object with:
                     filtering_guidance = filtering_guidance[json_start:json_end]
 
                 guidance = json.loads(filtering_guidance.strip())
-            except json.JSONDecodeError:
-                guidance = {
-                    "normalization_rules": {},
-                    "deduplication_strategy": "Compare titles and DOIs",
-                    "relevance_criteria": [
-                        "Recent publications",
-                        "Citation count",
-                        "Relevance to query",
-                    ],
-                    "recommended_filters": [],
-                }
+                filtering_provider = {"provider": "groq", "model": self.groq_model}
+            except json.JSONDecodeError as je:
+                raise RuntimeError(f"Groq returned non-JSON filtering guidance: {je}") from je
 
         except Exception as e:
             err_str = str(e)
@@ -457,31 +457,14 @@ Provide your analysis as a JSON object with:
                                 ]
 
                             guidance = json.loads(filtering_guidance.strip())
-                        except json.JSONDecodeError:
-                            guidance = {
-                                "normalization_rules": {},
-                                "deduplication_strategy": "Compare titles and DOIs",
-                                "relevance_criteria": [
-                                    "Recent publications",
-                                    "Citation count",
-                                    "Relevance to query",
-                                ],
-                                "recommended_filters": [],
-                            }
+                        except json.JSONDecodeError as je:
+                            raise RuntimeError(f"Groq fallback returned non-JSON filtering guidance: {je}") from je
                     except Exception as e2:
                         print(
                             f"[Groq] Retry with fallback model {self.groq_model} failed: {e2}"
                         )
-                        guidance = {
-                            "normalization_rules": {},
-                            "deduplication_strategy": "Compare titles and DOIs",
-                            "relevance_criteria": [
-                                "Recent publications",
-                                "Citation count",
-                                "Relevance to query",
-                            ],
-                            "recommended_filters": [],
-                        }
+                        last_exc = e2
+                        guidance = None
                 else:
                     print(
                         "[Groq] No fallback model could be selected; attempting Cerebras fallback..."
@@ -530,42 +513,61 @@ Provide your analysis as a JSON object with:
                                         json_end = cb_text.find("```", json_start)
                                         cb_text = cb_text[json_start:json_end]
                                     guidance = json.loads(cb_text.strip())
-                                except Exception:
-                                    guidance = {
-                                        "normalization_rules": {},
-                                        "deduplication_strategy": "Compare titles and DOIs",
-                                        "relevance_criteria": [
-                                            "Recent publications",
-                                            "Citation count",
-                                            "Relevance to query",
-                                        ],
-                                        "recommended_filters": [],
-                                    }
+                                    filtering_provider = {"provider": "cerebras", "model": cb_model}
+                                except Exception as ecb_inner:
+                                    print(f"[Cerebras] parsing failed: {ecb_inner}")
+                                    last_exc = ecb_inner
+                                    guidance = None
                         except Exception as ecb:
                             print(f"[Cerebras] fallback failed: {ecb}")
                     if guidance is None:
-                        guidance = {
-                            "normalization_rules": {},
-                            "deduplication_strategy": "Compare titles and DOIs",
-                            "relevance_criteria": [
-                                "Recent publications",
-                                "Citation count",
-                                "Relevance to query",
-                            ],
-                            "recommended_filters": [],
-                        }
+                        # continue to attempt other AI-only fallbacks
+                        pass
+
+            # If we reached here and guidance was produced by an AI fallback (Cerebras/Cloudflare), attach provider info
+            # Note: guidance_provider may have been set by subsequent fallbacks below
             else:
                 print(f"Error getting filtering guidance: {e}")
-                guidance = {
-                    "normalization_rules": {},
-                    "deduplication_strategy": "Compare titles and DOIs",
-                    "relevance_criteria": [
-                        "Recent publications",
-                        "Citation count",
-                        "Relevance to query",
-                    ],
-                    "recommended_filters": [],
-                }
+                last_exc = e
+                # Attempt Cloudflare fallback if configured
+                cf_endpoint = os.getenv("CLOUDFLARE_AI_ENDPOINT")
+                cf_token = os.getenv("CLOUDFLARE_API_TOKEN")
+                if cf_endpoint and cf_token:
+                    try:
+                        import requests
+
+                        headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
+                        payload = {"messages": [{"role": "system", "content": "You are a bibliometric data analyst. Provide structured guidance for data normalization and filtering."}, {"role": "user", "content": filter_prompt}], "model": os.getenv("CLOUDFLARE_MODEL", "gpt-4o")}
+                        r = requests.post(cf_endpoint, headers=headers, json=payload, timeout=30)
+                        r.raise_for_status()
+                        resp_json = r.json()
+                        cf_text = None
+                        try:
+                            cf_text = resp_json.get("choices", [])[0].get("message", {}).get("content")
+                        except Exception:
+                            cf_text = resp_json.get("text") or str(resp_json)
+                        if cf_text:
+                            if "```json" in cf_text:
+                                json_start = cf_text.find("```json") + 7
+                                json_end = cf_text.find("```", json_start)
+                                cf_text = cf_text[json_start:json_end]
+                            elif "```" in cf_text:
+                                json_start = cf_text.find("```") + 3
+                                json_end = cf_text.find("```", json_start)
+                                cf_text = cf_text[json_start:json_end]
+                            guidance = json.loads(cf_text.strip())
+                            filtering_provider = {"provider": "cloudflare", "model": os.getenv("CLOUDFLARE_MODEL", "gpt-4o")}
+                        else:
+                            guidance = None
+                    except Exception as ecf:
+                        print(f"[Cloudflare AI] Fallback failed: {ecf}")
+                        last_exc = ecf
+                else:
+                    guidance = None
+
+        # If guidance could not be produced by any AI provider, raise an error
+        if guidance is None:
+            raise RuntimeError(f"AI providers failed to produce filtering guidance: {last_exc}") from last_exc
 
         # Return both raw results and filtering guidance
         return {
@@ -573,6 +575,7 @@ Provide your analysis as a JSON object with:
             "result_summary": result_summary,
             "total_results": total_results,
             "filtering_guidance": guidance,
+            "filtering_provider": (filtering_provider if 'filtering_provider' in locals() else None),
             "user_query": user_query,
         }
 
@@ -599,6 +602,11 @@ Provide your analysis as a JSON object with:
         # Step 3: Filter and normalize with AI
         print("\nStep 3: Filtering and normalizing results with AI...")
         processed_results = self.filter_and_normalize_results(raw_results, user_query)
+
+        # Attach analysis provider metadata so callers can display traceability
+        processed_results["analysis"] = analysis
+        processed_results["analysis_provider"] = analysis.get("_ai_provider")
+        processed_results["filtering_provider"] = processed_results.get("filtering_provider")
 
         return processed_results
 
