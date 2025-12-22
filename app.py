@@ -53,6 +53,7 @@ from bibliometrics import (
     publications_to_csv_bytes,
     publications_to_json_bytes,
     visualize_pyvis,
+    compute_author_metrics,
 )
 
 # Optional: LLM summarization via kubectl Groq/Cerebras fallback (bibliometric_crawler)
@@ -320,11 +321,68 @@ def run_analysis_and_render(
             for s, e in source_errors:
                 st.write(f"- {s}: {e}")
 
+    # ---- Interactive exploration controls ----
+    st.markdown("**Interactive exploration**")
+    left_col, right_col = st.columns([2, 1])
+
+    # Determine a reasonable upper bound for the minimum-publications slider
+    max_n_pubs = 1
+    if graph is not None:
+        try:
+            max_n_pubs = max(
+                (int(d.get("n_pubs", 0) or 0) for _, d in graph.nodes(data=True)),
+                default=1,
+            )
+            max_n_pubs = max(1, max_n_pubs)
+        except Exception:
+            max_n_pubs = 1
+
+    with left_col:
+        slider_max = max(2, int(max_n_pubs))
+        min_pubs = st.slider(
+            "Minimum publications per author",
+            min_value=1,
+            max_value=slider_max,
+            value=1,
+        )
+        _author_search = st.text_input("Author name contains (filter)", value="")
+
+    with right_col:
+        _layout_choice = st.selectbox(
+            "Layout method",
+            options=[
+                "Auto (fa2 if available)",
+                "ForceAtlas2 (fa2)",
+                "Spring (networkx)",
+            ],
+            index=0,
+        )
+        _layout_map = {
+            "Auto (fa2 if available)": "auto",
+            "ForceAtlas2 (fa2)": "fa2",
+            "Spring (networkx)": "spring",
+        }
+        _fa2_iters = st.slider(
+            "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10
+        )
+
     # Top authors table and visualizations
     st.subheader("Top authors")
     top_authors = result.get("top_authors", [])
+
+    # Apply interactive filters to top authors
     if top_authors:
-        df_auth = authors_to_dataframe(top_authors)
+        filtered_authors = []
+        for a in top_authors:
+            try:
+                n_pubs = int(getattr(a, "n_publications", getattr(a, "n_pubs", 0)) or 0)
+            except Exception:
+                n_pubs = 0
+            name = str(getattr(a, "name", a))
+            if n_pubs >= min_pubs and (_author_search.strip().lower() in name.lower()):
+                filtered_authors.append(a)
+
+        df_auth = authors_to_dataframe(filtered_authors)
 
         # Table + exports in one column, visualizations in the other
         col_table, col_vis = st.columns([2, 3])

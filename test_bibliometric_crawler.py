@@ -1,4 +1,3 @@
-import os
 import pytest
 
 from bibliometric_crawler import BibliometricCrawler

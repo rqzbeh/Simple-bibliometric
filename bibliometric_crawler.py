@@ -181,7 +181,7 @@ class BibliometricCrawler:
 
                 analysis = json.loads(analysis_text.strip())
                 # Record provider metadata
-                analysis["_ai_provider"] = {"provider": "groq", "model": model_name}
+                analysis["_ai_provider"] = {"provider": "groq", "model": self.groq_model}
             except json.JSONDecodeError as je:
                 # Do not fall back to non-AI behavior; raise an explicit error
                 raise RuntimeError(f"Groq returned non-JSON analysis: {je}") from je
