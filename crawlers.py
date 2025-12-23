@@ -285,6 +285,49 @@ class ScopusCrawler(BaseCrawler):
         super().__init__(api_key)
         self.base_url = "https://api.elsevier.com/content/search/scopus"
         self.requests_per_second = 1
+        # Authtoken caching (authtoken expires after ~2 hours)
+        self._authtoken: Optional[str] = None
+        self._authtoken_ts: Optional[float] = None
+
+    def _get_authtoken(self) -> Optional[str]:
+        """Request an authtoken from Elsevier Authentication API and cache it."""
+        import time
+        import xml.etree.ElementTree as ET
+
+        # If token present and not expired (2 hours), return cached
+        if self._authtoken and self._authtoken_ts and (time.time() - self._authtoken_ts) < (2 * 3600 - 60):
+            return self._authtoken
+
+        # Call Authentication endpoint
+        auth_url = "https://api.elsevier.com/authenticate?platform=SCOPUS"
+        headers = {"X-ELS-APIKey": self.api_key} if self.api_key else {}
+        try:
+            r = requests.get(auth_url, headers=headers, timeout=30)
+            r.raise_for_status()
+            text = r.text
+            # Parse XML for authtoken
+            try:
+                root = ET.fromstring(text)
+                node = root.find('.//authtoken')
+                if node is not None and node.text:
+                    self._authtoken = node.text.strip()
+                    self._authtoken_ts = time.time()
+                    return self._authtoken
+            except ET.ParseError:
+                # Maybe JSON or plain text; try to look for token in JSON
+                try:
+                    j = r.json()
+                    tok = j.get('authtoken') or j.get('authToken')
+                    if tok:
+                        self._authtoken = tok
+                        self._authtoken_ts = time.time()
+                        return self._authtoken
+                except Exception:
+                    pass
+        except Exception:
+            # Don't raise - just return None so we fall back to APIKey header
+            return None
+        return None
 
     def _get_headers(self) -> Dict[str, str]:
         """Override headers for Scopus API"""
@@ -296,6 +339,15 @@ class ScopusCrawler(BaseCrawler):
             headers["X-ELS-APIKey"] = self.api_key
             # Add alternative capitalization for robustness
             headers["X-ELS-ApiKey"] = self.api_key
+        # If an insttoken is configured in the environment, include it
+        insttoken = os.getenv("ELS_INSTTOKEN")
+        if insttoken:
+            headers["X-ELS-Insttoken"] = insttoken
+        # Attempt to obtain authtoken and include it when present
+        at = self._get_authtoken()
+        if at:
+            headers["X-ELS-AuthToken"] = at
+            headers["X-ELS-Authtoken"] = at
         return headers
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
@@ -367,6 +419,44 @@ class ScienceDirectCrawler(BaseCrawler):
         super().__init__(api_key)
         self.base_url = "https://api.elsevier.com/content/search/sciencedirect"
         self.requests_per_second = 1
+        # Authtoken caching
+        self._authtoken: Optional[str] = None
+        self._authtoken_ts: Optional[float] = None
+
+    def _get_authtoken(self) -> Optional[str]:
+        """Request an authtoken from Elsevier Authentication API and cache it."""
+        import time
+        import xml.etree.ElementTree as ET
+
+        if self._authtoken and self._authtoken_ts and (time.time() - self._authtoken_ts) < (2 * 3600 - 60):
+            return self._authtoken
+
+        auth_url = "https://api.elsevier.com/authenticate?platform=SCOPUS"
+        headers = {"X-ELS-APIKey": self.api_key} if self.api_key else {}
+        try:
+            r = requests.get(auth_url, headers=headers, timeout=30)
+            r.raise_for_status()
+            text = r.text
+            try:
+                root = ET.fromstring(text)
+                node = root.find('.//authtoken')
+                if node is not None and node.text:
+                    self._authtoken = node.text.strip()
+                    self._authtoken_ts = time.time()
+                    return self._authtoken
+            except ET.ParseError:
+                try:
+                    j = r.json()
+                    tok = j.get('authtoken') or j.get('authToken')
+                    if tok:
+                        self._authtoken = tok
+                        self._authtoken_ts = time.time()
+                        return self._authtoken
+                except Exception:
+                    pass
+        except Exception:
+            return None
+        return None
 
     def _get_headers(self) -> Dict[str, str]:
         """Override headers for ScienceDirect API"""
@@ -376,6 +466,14 @@ class ScienceDirectCrawler(BaseCrawler):
         }
         if self.api_key:
             headers["X-ELS-APIKey"] = self.api_key
+        # Insttoken support
+        insttoken = os.getenv("ELS_INSTTOKEN")
+        if insttoken:
+            headers["X-ELS-Insttoken"] = insttoken
+        at = self._get_authtoken()
+        if at:
+            headers["X-ELS-AuthToken"] = at
+            headers["X-ELS-Authtoken"] = at
         return headers
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
