@@ -25,5 +25,7 @@ jobs:
           pip install pytest ruff
       - name: Run ruff
         run: ruff check .
+      - name: Streamlit import smoke test
+        run: python -c "import app"
       - name: Run tests
         run: pytest -q

@@ -142,7 +142,9 @@ class BibliometricCrawler:
         return os.path.join(self.cache_dir, "validation_cache.json")
 
     def _load_validation_cache(self) -> Dict[str, object]:
-        import os, json, time
+        import os
+        import json
+        import time
         path = self._cache_path()
         if not os.path.exists(path):
             return {}
@@ -158,7 +160,9 @@ class BibliometricCrawler:
             return {}
 
     def _save_validation_cache(self, results: Dict[str, object]) -> None:
-        import os, json, time
+        import os
+        import json
+        import time
         try:
             os.makedirs(self.cache_dir, exist_ok=True)
             with open(self._cache_path(), "w", encoding="utf-8") as fh:
@@ -177,7 +181,6 @@ class BibliometricCrawler:
 
         Returns a mapping: { crawler_name: {"ok": bool, "status": int|None, "message": str } }
         """
-        import time
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         if not invalidate_cache:
@@ -495,7 +498,6 @@ class BibliometricCrawler:
         # Optionally perform searches concurrently across databases and term variations
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        tasks = []  # (future -> (db_name, term)) when using executor
         # Helper function to run a single search and return (db_name, results)
         def _search_one(db_name, crawler, term):
             try:

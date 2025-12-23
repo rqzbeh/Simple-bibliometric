@@ -140,6 +140,21 @@ Contributions welcome. Please open an issue to discuss larger changes and follow
 
 ---
 
+## Release checklist (short)
+
+- ✅ Ensure all tests pass: `pytest -q`
+- ✅ Run linters: `python -m ruff check .` and apply fixes
+- ✅ Run Streamlit import smoke test: `python -c "import app"`
+- ✅ Validate provider keys and scopes: `python tools/run_sample_query.py` (inspect output for 401/403)
+- ✅ Run a sample analysis to verify metrics & graph: `python -c "from bibliometrics import analyze_field; analyze_field('cancer genomics', max_results_per_source=50, sources=['pubmed','sage'])"`
+- ✅ Build and run Docker image locally: `docker build -t simple-bib .` and `docker run --rm -p 8000:8000 simple-bib`
+- ✅ Check that `.env` (or system env) contains required API keys and is not committed to VCS
+- ✅ Tag the release and push the changelog/notes
+
+Keep this checklist short and verify each item before deploying to production.
+
+---
+
 ## License
 MIT
 

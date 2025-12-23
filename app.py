@@ -344,8 +344,9 @@ def run_analysis_and_render(
             min_value=1,
             max_value=slider_max,
             value=1,
+            key="min_pubs_slider_top",
         )
-        _author_search = st.text_input("Author name contains (filter)", value="")
+        _author_search = st.text_input("Author name contains (filter)", value="", key="author_search_text_top")
 
     with right_col:
         _layout_choice = st.selectbox(
@@ -356,6 +357,7 @@ def run_analysis_and_render(
                 "Spring (networkx)",
             ],
             index=0,
+            key="layout_select_top",
         )
         _layout_map = {
             "Auto (fa2 if available)": "auto",
@@ -363,7 +365,7 @@ def run_analysis_and_render(
             "Spring (networkx)": "spring",
         }
         _fa2_iters = st.slider(
-            "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10
+            "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10, key="fa2_iters_top"
         )
 
     # Top authors table and visualizations
@@ -546,8 +548,9 @@ def run_analysis_and_render(
             min_value=1,
             max_value=slider_max,
             value=1,
+            key="min_pubs_slider_bottom",
         )
-        _author_search = st.text_input("Author name contains (filter)", value="")
+        _author_search = st.text_input("Author name contains (filter)", value="", key="author_search_text_bottom")
 
     with right_col:
         _layout_choice = st.selectbox(
@@ -558,6 +561,7 @@ def run_analysis_and_render(
                 "Spring (networkx)",
             ],
             index=0,
+            key="layout_select_bottom",
         )
         _layout_map = {
             "Auto (fa2 if available)": "auto",
@@ -565,7 +569,7 @@ def run_analysis_and_render(
             "Spring (networkx)": "spring",
         }
         _fa2_iters = st.slider(
-            "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10
+            "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10, key="fa2_iters_bottom"
         )
 
     def _generate_and_write(Gf, out_dir, fname_gexf, fname_html, force=False):
