@@ -72,12 +72,13 @@ def safe_filename(s: str) -> str:
     return s[:120]
 
 
-def authors_to_dataframe(authors: List[Any]) -> "pd.DataFrame":
-    """Convert list of AuthorMetrics dataclasses to a DataFrame for display."""
-    global pd
+def authors_to_dataframe(authors: List[Any]):
+    """Convert list of AuthorMetrics dataclasses to a DataFrame (if pandas available) or a list.
+
+    Use a local import to avoid NameErrors/UnboundLocalError when Streamlit reloads modules.
+    """
     rows = []
     for a in authors:
-        # AuthorMetrics dataclass has fields name, n_publications, total_citations, h_index, g_index
         rows.append(
             {
                 "author": getattr(a, "name", str(a)),
@@ -87,17 +88,16 @@ def authors_to_dataframe(authors: List[Any]) -> "pd.DataFrame":
                 "g_index": getattr(a, "g_index", 0),
             }
         )
-    if pd is None:
-        # Minimal fallback: return a simple structure that streamlit can display
-        try:
-            import pandas as _pd  # type: ignore
 
-            pd = _pd  # type: ignore
-        except Exception:
-            # If pandas is not available return an empty structure
-            return []  # type: ignore
+    # Prefer a local import to avoid relying on module-level `pd` binding which can
+    # be shadowed during interactive reloads (Streamlit dev server behavior).
+    try:
+        import pandas as _pd  # type: ignore
 
-    df = pd.DataFrame(rows)
+        df = _pd.DataFrame(rows)
+    except Exception:
+        return rows
+
     if not df.empty:
         df = df.sort_values(by=["total_citations", "h_index"], ascending=False)
     return df

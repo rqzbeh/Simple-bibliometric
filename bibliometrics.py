@@ -467,7 +467,20 @@ def compute_author_metrics(publications: List[Pub]) -> List[AuthorMetrics]:
 
     results: List[AuthorMetrics] = []
     for cid, pubs in author_to_pubs.items():
-        citations_list = [int(pub.get("citations") or 0) for pub in pubs]
+        # Ensure unique publications per author (by DOI or normalized title) to avoid duplicates
+        unique_keys = set()
+        unique_pubs = []
+        for pub in pubs:
+            key = (pub.get("doi") or pub.get("title_norm", "")).lower().strip()
+            if not key:
+                # Fallback to object id
+                key = str(id(pub))
+            if key in unique_keys:
+                continue
+            unique_keys.add(key)
+            unique_pubs.append(pub)
+
+        citations_list = [int(pub.get("citations") or 0) for pub in unique_pubs]
         total_cit = sum(citations_list)
         mean_cit = statistics.mean(citations_list) if citations_list else 0.0
         h = h_index(citations_list)
@@ -476,12 +489,12 @@ def compute_author_metrics(publications: List[Pub]) -> List[AuthorMetrics]:
         results.append(
             AuthorMetrics(
                 name=display_name,
-                n_publications=len(pubs),
+                n_publications=len(unique_pubs),
                 total_citations=total_cit,
                 mean_citations=mean_cit,
                 h_index=h,
                 g_index=g,
-                publications=pubs,
+                publications=unique_pubs,
             )
         )
     results.sort(key=lambda x: x.total_citations, reverse=True)
@@ -834,8 +847,13 @@ def visualize_pyvis(
     # Add nodes with size proportional to n_pubs or total_citations and include display_name and community group
     for n, data in G.nodes(data=True):
         display_label = data.get("display_name", n)
-        size = max(5, (data.get("n_pubs", 0) * 2) + 5)
-        title = f"{display_label}<br>n_pubs: {data.get('n_pubs', 0)}<br>citations: {data.get('total_citations', 0)}"
+        # size: combine publications and citations with log scaling for better visual balance
+        pubs = max(0, int(data.get("n_pubs", 0) or 0))
+        cits = max(0, int(data.get("total_citations", 0) or 0))
+        import math
+
+        size = int(5 + math.log1p(pubs * 1.0) * 6 + math.log1p(cits * 0.1) * 6)
+        title = f"{display_label}<br>n_pubs: {pubs}<br>citations: {cits}<br>h_index: {data.get('h_index', 0)}"
         group = data.get("community")
         net.add_node(n, label=display_label, title=title, value=size, group=group)
 

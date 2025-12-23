@@ -201,7 +201,9 @@ class WoSCrawler(BaseCrawler):
             "User-Agent": "BibliometricCrawler/1.0",
         }
         if self.api_key:
+            # Some providers may expect different capitalizations; include both to be robust
             headers["X-ApiKey"] = self.api_key
+            headers["X-APIKey"] = self.api_key
         return headers
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
@@ -291,6 +293,8 @@ class ScopusCrawler(BaseCrawler):
         }
         if self.api_key:
             headers["X-ELS-APIKey"] = self.api_key
+            # Add alternative capitalization for robustness
+            headers["X-ELS-ApiKey"] = self.api_key
         return headers
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
