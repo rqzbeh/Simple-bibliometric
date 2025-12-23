@@ -35,7 +35,8 @@ Ensure your keys are:
 1. Visit [Clarivate Developer Portal](https://developer.clarivate.com/)
 2. Log in with your account
 3. Verify your API key is **active** and **not revoked**
-4. Ensure the key is assigned to the **WoS API** product
+4. Ensure the key is assigned to the **WoS Starter API** product (NOT the old WoS API Expanded)
+5. Check that the key has **access to document search** endpoint (`/documents`)
 
 #### For Springer:
 1. Visit [Springer API Console](https://dev.springernature.com/)
@@ -87,9 +88,9 @@ curl -X GET "https://api.elsevier.com/authenticate?platform=SCOPUS" \
   -H "X-ELS-APIKey: YOUR_API_KEY"
 ```
 
-#### WoS:
+#### WoS (Clarivate):
 ```bash
-curl -X GET "https://api.clarivate.com/api/wos?databaseId=WOS&usrQuery=cancer&count=1" \
+curl -X GET "https://api.clarivate.com/apis/wos-starter/v1/documents?q=TS%3D%28cancer%29&limit=10" \
   -H "X-ApiKey: YOUR_WOS_API_KEY"
 ```
 
@@ -112,9 +113,13 @@ Based on your current API keys, these providers are working:
 
 ## Code Changes Made
 
-- ✅ Added verbose logging to authtoken exchange (`_get_authtoken()`)
-- ✅ Added insttoken support for institutional access
-- ✅ Added fallback to APIKey-only headers when authtoken fails
-- ✅ Improved error messages and diagnostics
+- ✅ **Updated WoS API to Starter API v1**: Migrated from old `/api/wos` endpoint to modern `/apis/wos-starter/v1`
+- ✅ **Fixed authentication**: Uses correct `X-ApiKey` header (removed `X-APIKey` variant)
+- ✅ **Fixed response parsing**: Updated to handle clean JSON responses instead of complex nested XML
+- ✅ **Added WoS Query Language support**: Supports field tags like `TI=`, `AU=`, `PY=`, etc.
+- ✅ **Added verbose logging** to authtoken exchange (`_get_authtoken()`)
+- ✅ **Added insttoken support** for institutional access
+- ✅ **Added fallback** to APIKey-only headers when authtoken fails
+- ✅ **Improved error messages** and diagnostics
 
 The code is now correctly attempting all supported authentication methods. The 401 responses you're seeing are from the **provider servers rejecting your credentials**, not from code issues.
