@@ -514,7 +514,7 @@ def run_analysis_and_render(
         try:
             with open(pyvis_path, "r", encoding="utf-8") as fh:
                 html = fh.read()
-            components.html(html, height=400, scrolling=True)
+            components.html(html, height=600, scrolling=True)
         except Exception as e:
             st.warning(f"Could not load pre-generated visualization: {e}")
         st.markdown(
@@ -572,7 +572,7 @@ def run_analysis_and_render(
             "ForceAtlas2 iterations", min_value=10, max_value=1000, value=200, step=10, key="fa2_iters_bottom"
         )
 
-    def _generate_and_write(Gf, out_dir, fname_gexf, fname_html, force=False):
+    def _generate_and_write(Gf, out_dir, fname_gexf, fname_html, layout_choice, fa2_iters, force=False):
         """Write a GEXF and generate a pyvis HTML (cached by filename)."""
         os.makedirs(out_dir, exist_ok=True)
         # Write GEXF (for download) where possible
@@ -585,11 +585,65 @@ def run_analysis_and_render(
         need_gen = force or not os.path.exists(fname_html)
         if need_gen:
             try:
-                visualize_pyvis(Gf, fname_html)
+                visualize_pyvis(Gf, fname_html, layout=layout_choice, fa2_iterations=fa2_iters)
             except Exception as e:
                 st.warning(f"Could not generate HTML visualization: {e}")
                 return None
         return fname_html if os.path.exists(fname_html) else None
+
+    # Apply filters to the graph and regenerate visualization if button is clicked
+    if graph is not None and nx is not None:
+        if st.button("Generate filtered network", key="gen_filtered_network"):
+            try:
+                # Filter graph based on min_pubs
+                filtered_graph = graph.copy()
+                nodes_to_remove = []
+                for n, d in filtered_graph.nodes(data=True):
+                    n_pubs_node = int(d.get("n_pubs", 0) or 0)
+                    display_name = d.get("display_name", str(n))
+                    # Apply filters
+                    if n_pubs_node < min_pubs:
+                        nodes_to_remove.append(n)
+                    elif _author_search.strip() and _author_search.strip().lower() not in display_name.lower():
+                        nodes_to_remove.append(n)
+                
+                filtered_graph.remove_nodes_from(nodes_to_remove)
+                
+                if filtered_graph.number_of_nodes() == 0:
+                    st.warning("No authors match the current filter criteria.")
+                else:
+                    # Generate filtered visualization
+                    layout_choice = _layout_map.get(_layout_choice, "auto")
+                    filtered_html = os.path.join(
+                        out_dir,
+                        f"{query.replace(' ', '_')}_filtered_{min_pubs}pubs.html"
+                    )
+                    filtered_gexf = os.path.join(
+                        out_dir,
+                        f"{query.replace(' ', '_')}_filtered_{min_pubs}pubs.gexf"
+                    )
+                    
+                    result_html = _generate_and_write(
+                        filtered_graph, out_dir, filtered_gexf, filtered_html, 
+                        layout_choice, _fa2_iters, force=True
+                    )
+                    
+                    if result_html and os.path.exists(result_html):
+                        st.success(f"Generated filtered network with {filtered_graph.number_of_nodes()} authors and {filtered_graph.number_of_edges()} collaborations")
+                        with open(result_html, "r", encoding="utf-8") as fh:
+                            components.html(fh.read(), height=600, scrolling=True)
+                        
+                        # Offer download
+                        with open(filtered_gexf, "rb") as f:
+                            st.download_button(
+                                "Download filtered network (GEXF)",
+                                f.read(),
+                                file_name=f"{query.replace(' ', '_')}_filtered.gexf"
+                            )
+            except Exception as e:
+                st.error(f"Failed to generate filtered network: {e}")
+    else:
+        st.info("No network graph available. Run an analysis first.")
 
 
 def main():
