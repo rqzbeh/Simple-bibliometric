@@ -302,7 +302,9 @@ class ScopusCrawler(BaseCrawler):
         auth_url = "https://api.elsevier.com/authenticate?platform=SCOPUS"
         headers = {"X-ELS-APIKey": self.api_key} if self.api_key else {}
         try:
+            print(f"[{self.__class__.__name__}] Attempting authtoken exchange: {auth_url}")
             r = requests.get(auth_url, headers=headers, timeout=30)
+            print(f"[{self.__class__.__name__}] Authtoken response status: {r.status_code}")
             r.raise_for_status()
             text = r.text
             # Parse XML for authtoken
@@ -312,8 +314,12 @@ class ScopusCrawler(BaseCrawler):
                 if node is not None and node.text:
                     self._authtoken = node.text.strip()
                     self._authtoken_ts = time.time()
+                    print(f"[{self.__class__.__name__}] Authtoken obtained successfully")
                     return self._authtoken
-            except ET.ParseError:
+                else:
+                    print(f"[{self.__class__.__name__}] No authtoken in XML response")
+            except ET.ParseError as pe:
+                print(f"[{self.__class__.__name__}] XML parse error: {pe}")
                 # Maybe JSON or plain text; try to look for token in JSON
                 try:
                     j = r.json()
@@ -321,12 +327,12 @@ class ScopusCrawler(BaseCrawler):
                     if tok:
                         self._authtoken = tok
                         self._authtoken_ts = time.time()
+                        print(f"[{self.__class__.__name__}] Authtoken obtained from JSON")
                         return self._authtoken
-                except Exception:
-                    pass
-        except Exception:
-            # Don't raise - just return None so we fall back to APIKey header
-            return None
+                except Exception as je:
+                    print(f"[{self.__class__.__name__}] JSON parse error: {je}")
+        except Exception as e:
+            print(f"[{self.__class__.__name__}] Authtoken exchange failed: {e}")
         return None
 
     def _get_headers(self) -> Dict[str, str]:
@@ -431,10 +437,12 @@ class ScienceDirectCrawler(BaseCrawler):
         if self._authtoken and self._authtoken_ts and (time.time() - self._authtoken_ts) < (2 * 3600 - 60):
             return self._authtoken
 
-        auth_url = "https://api.elsevier.com/authenticate?platform=SCOPUS"
+        auth_url = "https://api.elsevier.com/authenticate?platform=SCIENCEDIRECT"
         headers = {"X-ELS-APIKey": self.api_key} if self.api_key else {}
         try:
+            print(f"[{self.__class__.__name__}] Attempting authtoken exchange: {auth_url}")
             r = requests.get(auth_url, headers=headers, timeout=30)
+            print(f"[{self.__class__.__name__}] Authtoken response status: {r.status_code}")
             r.raise_for_status()
             text = r.text
             try:
@@ -443,19 +451,24 @@ class ScienceDirectCrawler(BaseCrawler):
                 if node is not None and node.text:
                     self._authtoken = node.text.strip()
                     self._authtoken_ts = time.time()
+                    print(f"[{self.__class__.__name__}] Authtoken obtained successfully")
                     return self._authtoken
-            except ET.ParseError:
+                else:
+                    print(f"[{self.__class__.__name__}] No authtoken in XML response")
+            except ET.ParseError as pe:
+                print(f"[{self.__class__.__name__}] XML parse error: {pe}")
                 try:
                     j = r.json()
                     tok = j.get('authtoken') or j.get('authToken')
                     if tok:
                         self._authtoken = tok
                         self._authtoken_ts = time.time()
+                        print(f"[{self.__class__.__name__}] Authtoken obtained from JSON")
                         return self._authtoken
-                except Exception:
-                    pass
-        except Exception:
-            return None
+                except Exception as je:
+                    print(f"[{self.__class__.__name__}] JSON parse error: {je}")
+        except Exception as e:
+            print(f"[{self.__class__.__name__}] Authtoken exchange failed: {e}")
         return None
 
     def _get_headers(self) -> Dict[str, str]:
