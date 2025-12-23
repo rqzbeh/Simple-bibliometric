@@ -91,8 +91,34 @@ class BibliometricCrawler:
         }
 
         # Registry for optional provider token-scope probes. Attach callables that accept (crawler) and return dict of scopes/info.
-        # Example: self.register_scope_probe('scopus', lambda c: {'scopes': ['search']})
         self.scope_probes = {}
+
+        # Default lightweight scope probes for providers that often support metadata endpoints.
+        # These are intentionally conservative and non-destructive: they perform a tiny probe request
+        # and expose summary information about the response for diagnostics.
+        def _probe_scopus(crawler):
+            try:
+                # Small search to verify auth and expose top-level keys
+                resp = crawler._make_request("", params={"query": "test", "count": 1})
+                if isinstance(resp, dict):
+                    return {"keys": list(resp.keys())}
+                return {"type": type(resp).__name__}
+            except Exception as e:
+                return {"error": str(e)}
+
+        def _probe_springer(crawler):
+            try:
+                # Springer supports a metadata endpoint; call with small page size
+                resp = crawler._make_request("", params={"q": "test", "p": 1, "api_key": crawler.api_key})
+                if isinstance(resp, dict):
+                    return {"keys": list(resp.keys())}
+                return {"type": type(resp).__name__}
+            except Exception as e:
+                return {"error": str(e)}
+
+        # Register default probes (safe to change/override by user)
+        self.register_scope_probe("scopus", _probe_scopus)
+        self.register_scope_probe("springer", _probe_springer)
 
     def register_scope_probe(self, provider_name: str, probe_callable) -> None:
         """Register a callable to probe a provider for token scope or metadata.
