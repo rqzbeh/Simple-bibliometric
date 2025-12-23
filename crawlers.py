@@ -134,7 +134,7 @@ class BaseCrawler(ABC):
                 except Exception:
                     pass
                 if status and 400 <= status < 500:
-                    # Provide enhanced diagnostics for auth/client errors
+                    # Provide enhanced diagnostics for auth/client errors and return error payload
                     env_info = None
                     if getattr(self, "env_var", None):
                         env_info = (getattr(self, "env_var"), bool(os.getenv(getattr(self, "env_var"))))
@@ -143,7 +143,8 @@ class BaseCrawler(ABC):
                         + (f" Env var {env_info[0]} present: {env_info[1]}." if env_info else "")
                         + (f" Response: {resp_text[:200]}" if resp_text else "")
                     )
-                    return {}
+                    # Return structured error information so callers (and validate_keys) can inspect status/text
+                    return {"error": {"status": status, "text": resp_text}}
                 last_exc = e
             except requests.exceptions.RequestException as e:
                 # Network or connection-level errors (retryable)

@@ -196,10 +196,17 @@ class BibliometricCrawler:
                 probe_resp = None
                 try:
                     if hasattr(crawler, "search"):
-                        _ = crawler.search("test", max_results=1)
-                        probe_resp = True
+                        # Capture the search response and treat empty results as a failure
+                        resp = crawler.search("test", max_results=1)
+                        probe_resp = bool(resp)
+                        # Help diagnostics by reporting the raw response size/type
+                        info["raw_response_type"] = type(resp).__name__
+                        info["raw_response_len"] = len(resp) if hasattr(resp, "__len__") else None
                     else:
-                        probe_resp = crawler._make_request("", params={}, method="GET")
+                        resp = crawler._make_request("", params={}, method="GET")
+                        probe_resp = bool(resp)
+                        info["raw_response_type"] = type(resp).__name__
+                        info["raw_response_len"] = len(resp) if hasattr(resp, "__len__") else None
                 except Exception as probe_exc:
                     try:
                         from requests.exceptions import HTTPError
@@ -214,7 +221,14 @@ class BibliometricCrawler:
                     info["ok"] = False
                     return name, info
 
-                if probe_resp:
+                # Treat empty responses (empty list/dict/None) as probe failure
+                # If the response contains an explicit error payload from _make_request, surface it
+                if isinstance(resp, dict) and resp.get("error"):
+                    err = resp.get("error") or {}
+                    info["ok"] = False
+                    info["status"] = err.get("status")
+                    info["message"] = err.get("text") or "HTTP error returned"
+                elif probe_resp:
                     info["ok"] = True
                     info["message"] = "OK"
                     # Optionally run a registered scope probe for more information
@@ -226,7 +240,9 @@ class BibliometricCrawler:
                             info["scopes"] = {"error": str(es)}
                 else:
                     info["ok"] = False
-                    info["message"] = "Empty response from probe"
+                    info["message"] = (
+                        "Empty response from probe (possible auth/permission issue)."
+                    )
 
             except Exception as e:
                 info["ok"] = False
