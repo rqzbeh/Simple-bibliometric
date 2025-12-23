@@ -1,4 +1,15 @@
-# Simple-bibliometric
+# Simple-bibliometric — v1.0.0 (Just released)
+
+Simple-bibliometric is a compact, production-minded bibliometric crawler and analysis pipeline that ships with improved AI integration, key-validation diagnostics, and fast concurrent crawling.
+
+What’s new in this release
+- ✅ Groq AI as primary query analyzer with intelligent fallbacks
+- ✅ Integration mode: validate API keys with cached probe results and TTL
+- ✅ Parallelized crawling (configurable `max_workers`) for fast real-world performance
+- ✅ Tools for diagnostics: `tools/verify_scopes.py` and `tools/perf_benchmark.py`
+- ✅ Cleanup and streamlined repository layout
+
+---
 
 A lightweight bibliometric crawler and analysis pipeline with AI-powered query analysis and filtering. Designed for experiments and small deployments; production-ready features include job queues, caching, and configurable data source integrations.
 
