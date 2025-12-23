@@ -291,12 +291,11 @@ class WoSCrawler(BaseCrawler):
         print(f"[WoS] Searching for: {query}")
 
         if not self.api_key:
-            print("[WoS] API key required")
+            print("[WoS] API key required. Set WOS_API_KEY environment variable.")
             return []
 
         api_instance = self._get_client()
         if api_instance is None:
-            print("[WoS] Failed to initialize API client")
             return []
 
         try:
@@ -368,17 +367,20 @@ class WoSCrawler(BaseCrawler):
             return results
 
         except ApiException as e:
+            import traceback
             if e.status == 401:
-                print(
-                    "[WoS] Authentication failed: Invalid API key or expired token"
-                )
+                print(f"[WoS] Authentication failed (HTTP 401): Invalid API key")
+                print("[WoS] Get your API key from: https://developer.clarivate.com/")
+            elif e.status == 403:
+                print(f"[WoS] Access forbidden (HTTP 403): API key may be expired or unauthorized")
             else:
-                print(
-                    f"[WoS] API error (status {e.status}): {e.reason if hasattr(e, 'reason') else str(e)}"
-                )
+                print(f"[WoS] API error (status {e.status}): {e.reason if hasattr(e, 'reason') else str(e)}")
+            print(f"[WoS] Error details: {traceback.format_exc()}")
             return []
         except Exception as e:
+            import traceback
             print(f"[WoS] Error during search: {e}")
+            print(f"[WoS] Error details: {traceback.format_exc()}")
             return []
 
 
@@ -501,7 +503,23 @@ class ScopusCrawler(BaseCrawler):
             return results
 
         except Exception as e:
-            print(f"[Scopus] Error during search: {e}")
+            import traceback
+            error_str = str(e)
+            error_type = type(e).__name__
+            
+            # Check for specific pybliometrics errors
+            if "401" in error_type or "401" in error_str:
+                print(f"[Scopus] Authentication error (HTTP 401): Invalid or expired API key")
+                print("[Scopus] Get your API key from: https://dev.elsevier.com/")
+                print("[Scopus] Set environment variable: SCOPUS_API_KEY=your_key_here")
+            elif "403" in error_type or "403" in error_str:
+                print(f"[Scopus] Access forbidden (HTTP 403): Check API key permissions")
+            elif "429" in error_type or "429" in error_str:
+                print(f"[Scopus] Rate limit exceeded (HTTP 429): Too many requests")
+            else:
+                print(f"[Scopus] Error during search: {e}")
+                if "--verbose" in error_str or len(error_str) < 200:
+                    print(f"[Scopus] Error details: {traceback.format_exc()}")
             return []
 
 
@@ -622,7 +640,23 @@ class ScienceDirectCrawler(BaseCrawler):
             return results
 
         except Exception as e:
-            print(f"[ScienceDirect] Error during search: {e}")
+            import traceback
+            error_str = str(e)
+            error_type = type(e).__name__
+            
+            # Check for specific pybliometrics errors
+            if "401" in error_type or "401" in error_str:
+                print(f"[ScienceDirect] Authentication error (HTTP 401): Invalid or expired API key")
+                print("[ScienceDirect] Get your API key from: https://dev.elsevier.com/")
+                print("[ScienceDirect] Set environment variable: SCIENCEDIRECT_API_KEY=your_key_here")
+            elif "403" in error_type or "403" in error_str:
+                print(f"[ScienceDirect] Access forbidden (HTTP 403): Check API key permissions")
+            elif "429" in error_type or "429" in error_str:
+                print(f"[ScienceDirect] Rate limit exceeded (HTTP 429): Too many requests")
+            else:
+                print(f"[ScienceDirect] Error during search: {e}")
+                if "--verbose" in error_str or len(error_str) < 200:
+                    print(f"[ScienceDirect] Error details: {traceback.format_exc()}")
             return []
 
 
