@@ -55,6 +55,32 @@ except Exception:
     pybliometrics = None
     PYBLIOMETRICS_AVAILABLE = False
 
+try:
+    from springernature_api_client.openaccess import OpenAccessAPI
+    from springernature_api_client.meta import MetaAPI
+    
+    SPRINGER_AVAILABLE = True
+except Exception:
+    OpenAccessAPI = None
+    MetaAPI = None
+    SPRINGER_AVAILABLE = False
+
+try:
+    from xploreapi import XPLORE
+    
+    IEEE_AVAILABLE = True
+except Exception:
+    XPLORE = None
+    IEEE_AVAILABLE = False
+
+try:
+    from ebscopy import edsapi
+    
+    EBSCO_AVAILABLE = True
+except Exception:
+    edsapi = None
+    EBSCO_AVAILABLE = False
+
 
 class BaseCrawler(ABC):
     """Base class for all academic database crawlers"""
@@ -1310,65 +1336,71 @@ class SAGECrawler(BaseCrawler):
 class IEEECrawler(BaseCrawler):
     """IEEE Xplore API Crawler
 
-    API Documentation: https://developer.ieee.org/docs/read/Searching_the_IEEE_Xplore_Metadata_API
+    Uses the official xploreapi Python SDK.
+    API Documentation: https://developer.ieee.org/Python3_Software_Development_Kit
     """
+
+    env_var = "IEEE_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
-        self.base_url = "https://ieeexploreapi.ieee.org/api/v1/search/articles"
+        self.use_ieee = IEEE_AVAILABLE
         self.requests_per_second = 1
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """
-        Search IEEE Xplore database
+        Search IEEE Xplore database using official SDK
         """
         print(f"[IEEE] Searching for: {query}")
 
-        if not self.api_key:
+        if not self.use_ieee:
+            print("[IEEE] xploreapi not available")
+            return []
+
+        api_key = self.api_key or os.getenv("IEEE_API_KEY")
+        if not api_key:
             print("[IEEE] API key required")
             return []
 
         try:
-            params = {
-                "querytext": query,
-                "max_records": min(max_results, 200),
-                "start_record": 1,
-                "sort_order": "desc",
-                "sort_field": "article_number",
-                "apikey": self.api_key,
-            }
+            # Initialize XPLORE API client
+            query_obj = XPLORE(api_key)
+            
+            # Set query parameters
+            query_obj.queryText(query)
+            query_obj.maximumResults(min(max_results, 200))  # Max 200 per request
+            query_obj.dataType('json')
+            query_obj.dataFormat('object')
+            
+            # Execute search
+            response = query_obj.callAPI()
 
-            response = self._make_request("", params=params)
-
-            if not response or "articles" not in response:
-                return []
-
-            articles = response.get("articles", [])
             results = []
+            if response and 'articles' in response:
+                for article in response['articles']:
+                    # Extract authors
+                    authors = []
+                    if 'authors' in article and 'authors' in article['authors']:
+                        for author in article['authors']['authors']:
+                            full_name = author.get("full_name", "")
+                            if full_name:
+                                authors.append(full_name)
 
-            for article in articles:
-                # Extract authors
-                authors = []
-                for author in article.get("authors", {}).get("authors", []):
-                    full_name = author.get("full_name", "")
-                    if full_name:
-                        authors.append(full_name)
-
-                result = {
-                    "title": article.get("title", ""),
-                    "authors": authors,
-                    "year": str(article.get("publication_year", "")),
-                    "doi": article.get("doi", ""),
-                    "abstract": article.get("abstract", ""),
-                    "source": "IEEE",
-                    "citations": article.get("citing_paper_count", 0),
-                    "url": article.get("html_url", ""),
-                    "journal": article.get("publication_title", ""),
-                    "isbn": article.get("isbn", ""),
-                    "issn": article.get("issn", ""),
-                    "article_number": article.get("article_number", ""),
-                }
-                results.append(result)
+                    result = {
+                        "title": article.get("title", ""),
+                        "authors": authors,
+                        "year": str(article.get("publication_year", "")),
+                        "doi": article.get("doi", ""),
+                        "abstract": article.get("abstract", ""),
+                        "source": "IEEE",
+                        "citations": article.get("citing_paper_count", 0),
+                        "url": article.get("html_url", ""),
+                        "journal": article.get("publication_title", ""),
+                        "isbn": article.get("isbn", ""),
+                        "issn": article.get("issn", ""),
+                        "article_number": article.get("article_number", ""),
+                    }
+                    results.append(result)
 
             return results
 
@@ -1434,64 +1466,64 @@ class ERICCrawler(BaseCrawler):
 
 
 class SpringerCrawler(BaseCrawler):
-    """Springer API Crawler
+    """Springer Nature API Crawler
 
-    API Documentation: https://dev.springernature.com/
+    Uses the official springernature-api-client library.
+    API Documentation: https://dev.springernature.com/docs/python-api-wrapper/
     """
+
+    env_var = "SPRINGER_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
-        self.base_url = "http://api.springernature.com/metadata/json"
+        self.use_springer = SPRINGER_AVAILABLE
         self.requests_per_second = 0.2  # ~5000 calls/day
-
-    def _get_headers(self) -> Dict[str, str]:
-        """Override headers for Springer API"""
-        return {"Accept": "application/json", "User-Agent": "BibliometricCrawler/1.0"}
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """
-        Search Springer database
+        Search Springer Nature database using official client
         """
         print(f"[Springer] Searching for: {query}")
 
-        if not self.api_key:
+        if not self.use_springer:
+            print("[Springer] springernature-api-client not available")
+            return []
+
+        api_key = self.api_key or os.getenv("SPRINGER_API_KEY")
+        if not api_key:
             print("[Springer] API key required")
             return []
 
         try:
-            params = {
-                "q": query,
-                "p": min(max_results, 100),  # Max 100 per request
-                "api_key": self.api_key,
-            }
+            # Use OpenAccessAPI for open access content
+            client = OpenAccessAPI(api_key=api_key)
+            
+            # Search with query
+            response = client.search(
+                q=query,
+                p=min(max_results, 100),  # Max 100 per request
+                s=1,  # Starting position
+                fetch_all=False
+            )
 
-            response = self._make_request("", params=params)
-
-            if not response or "records" not in response:
-                return []
-
-            records = response.get("records", [])
             results = []
-
-            for record in records:
-                result = {
-                    "title": record.get("title", ""),
-                    "authors": [
-                        creator.get("creator", "")
-                        for creator in record.get("creators", [])
-                    ],
-                    "year": record.get("publicationDate", "")[:4]
-                    if record.get("publicationDate")
-                    else "",
-                    "doi": record.get("doi", ""),
-                    "abstract": record.get("abstract", ""),
-                    "source": "Springer",
-                    "citations": 0,
-                    "url": record.get("url", [{}])[0].get("value", ""),
-                    "journal": record.get("publicationName", ""),
-                    "issn": record.get("issn", ""),
-                }
-                results.append(result)
+            if response and 'records' in response:
+                for record in response['records']:
+                    result = {
+                        "title": record.get("title", ""),
+                        "authors": record.get("creators", []),
+                        "year": record.get("publicationDate", "")[:4]
+                        if record.get("publicationDate")
+                        else "",
+                        "doi": record.get("doi", ""),
+                        "abstract": record.get("abstract", ""),
+                        "source": "Springer",
+                        "citations": 0,
+                        "url": record.get("url", [{}])[0].get("value", "") if record.get("url") else "",
+                        "journal": record.get("publicationName", ""),
+                        "issn": record.get("issn", ""),
+                    }
+                    results.append(result)
 
             return results
 
@@ -1501,46 +1533,81 @@ class SpringerCrawler(BaseCrawler):
 
 
 class EBSCOCrawler(BaseCrawler):
-    """EBSCO API Crawler
+    """EBSCO Discovery Service API Crawler
 
-    API Documentation: https://connect.ebsco.com/s/article/EBSCOhost-API-Making-Requests-with-REST
+    Uses the official ebscopy library.
+    API Documentation: https://github.com/ebsco/ebscopy
     """
+
+    env_var = "EBSCO_USER_ID"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
-        self.base_url = "https://api.ebsco.io/"
-        self.auth_token = None
-
-    def _authenticate(self) -> bool:
-        """EBSCO requires OAuth authentication"""
-        if not self.api_key:
-            return False
-
-        try:
-            # EBSCO uses complex OAuth flow
-            # This is a simplified placeholder - actual implementation needs OAuth flow
-            print("[EBSCO] Authentication required - OAuth flow needed")
-            return False
-        except Exception as e:
-            print(f"[EBSCO] Authentication error: {e}")
-            return False
+        self.use_ebsco = EBSCO_AVAILABLE
+        self.session = None
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """
-        Search EBSCO database
-        Note: EBSCO requires complex OAuth authentication
+        Search EBSCO Discovery Service using official client
         """
         print(f"[EBSCO] Searching for: {query}")
-        print(
-            "[EBSCO] Note: Full implementation requires OAuth 2.0 authentication flow"
-        )
 
-        if not self._authenticate():
-            print("[EBSCO] Authentication required - skipping")
+        if not self.use_ebsco:
+            print("[EBSCO] ebscopy not available")
             return []
 
-        # Placeholder for actual search after authentication
-        return []
+        # EBSCO uses user_id, password, profile, and org
+        user_id = os.getenv("EBSCO_USER_ID")
+        password = os.getenv("EBSCO_PASSWORD")
+        profile = os.getenv("EBSCO_PROFILE", "edsapi")
+        org = os.getenv("EBSCO_ORG", "")
+
+        if not user_id or not password:
+            print("[EBSCO] EBSCO_USER_ID and EBSCO_PASSWORD required")
+            return []
+
+        try:
+            # Create session
+            self.session = edsapi.Session(
+                user_id=user_id,
+                password=password,
+                profile=profile,
+                org=org,
+                guest="n"
+            )
+            
+            # Perform search
+            search_results = self.session.search(query)
+
+            results = []
+            if search_results and hasattr(search_results, 'records'):
+                for record in search_results.records[:max_results]:
+                    result = {
+                        "title": getattr(record, "title", ""),
+                        "authors": getattr(record, "authors", []),
+                        "year": getattr(record, "pub_year", ""),
+                        "doi": getattr(record, "doi", ""),
+                        "abstract": getattr(record, "abstract", ""),
+                        "source": "EBSCO",
+                        "citations": 0,
+                        "url": getattr(record, "plink", ""),
+                        "journal": getattr(record, "source_title", ""),
+                        "issn": getattr(record, "issn", ""),
+                    }
+                    results.append(result)
+
+            # End session
+            self.session.end()
+            return results
+
+        except Exception as e:
+            print(f"[EBSCO] Error during search: {e}")
+            if self.session:
+                try:
+                    self.session.end()
+                except:
+                    pass
+            return []
 
 
 class WileyCrawler(BaseCrawler):

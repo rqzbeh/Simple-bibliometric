@@ -592,7 +592,7 @@ def run_analysis_and_render(
         return fname_html if os.path.exists(fname_html) else None
 
     # Apply filters to the graph and regenerate visualization if button is clicked
-    if graph is not None and nx is not None:
+    if graph is not None and nx is not None and query and out_dir:
         if st.button("Generate filtered network", key="gen_filtered_network"):
             try:
                 # Filter graph based on min_pubs
@@ -614,13 +614,14 @@ def run_analysis_and_render(
                 else:
                     # Generate filtered visualization
                     layout_choice = _layout_map.get(_layout_choice, "auto")
+                    safe_query = query.replace(' ', '_').replace('/', '_').replace('\\', '_')
                     filtered_html = os.path.join(
                         out_dir,
-                        f"{query.replace(' ', '_')}_filtered_{min_pubs}pubs.html"
+                        f"{safe_query}_filtered_{min_pubs}pubs.html"
                     )
                     filtered_gexf = os.path.join(
                         out_dir,
-                        f"{query.replace(' ', '_')}_filtered_{min_pubs}pubs.gexf"
+                        f"{safe_query}_filtered_{min_pubs}pubs.gexf"
                     )
                     
                     result_html = _generate_and_write(
