@@ -5,6 +5,7 @@ Each crawler implements actual API integrations based on official documentation.
 
 import os
 import random
+import threading
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
@@ -51,9 +52,13 @@ try:
     from pybliometrics.sciencedirect import ScienceDirectSearch, ArticleRetrieval
 
     PYBLIOMETRICS_AVAILABLE = True
+    _pybliometrics_initialized = False
+    _pybliometrics_lock = threading.Lock()
 except Exception:
     pybliometrics = None
     PYBLIOMETRICS_AVAILABLE = False
+    _pybliometrics_initialized = False
+    _pybliometrics_lock = None
 
 try:
     from springernature_api_client.openaccess import OpenAccessAPI
@@ -65,13 +70,11 @@ except Exception:
     MetaAPI = None
     SPRINGER_AVAILABLE = False
 
-try:
-    from xploreapi import XPLORE
-    
-    IEEE_AVAILABLE = True
-except Exception:
-    XPLORE = None
-    IEEE_AVAILABLE = False
+# IEEE Xplore - package not available on PyPI
+# Note: xploreapi package does not exist on PyPI as of 2024
+# For IEEE integration, consider using requests library directly
+XPLORE = None
+IEEE_AVAILABLE = False
 
 try:
     from ebscopy import edsapi
@@ -395,43 +398,50 @@ class ScopusCrawler(BaseCrawler):
         self.use_pybliometrics = PYBLIOMETRICS_AVAILABLE
 
     def _initialize_pybliometrics(self) -> bool:
-        """Initialize pybliometrics if not already done.
+        """Initialize pybliometrics if not already done (thread-safe singleton).
         
         pybliometrics uses config file ~/.config/pybliometrics.cfg.
         Pass API keys programmatically to avoid interactive prompts.
         """
+        global _pybliometrics_initialized
+        
         if not self.use_pybliometrics:
             return False
-        try:
-            # Get API key from instance or environment
-            api_key = self.api_key or os.getenv("SCOPUS_API_KEY") or os.getenv("ELS_API_KEY")
-            inst_token = os.getenv("ELS_INSTTOKEN")
             
-            if not api_key:
-                print("[Scopus] No API key found in environment or instance")
-                return False
-            
-            # Initialize pybliometrics with API keys to avoid interactive prompts
-            # Force creation of config directories if missing
-            import tempfile
-            keys = [api_key]
-            inst_tokens = [inst_token] if inst_token else None
-            
-            # Create a temporary directory for cache if Directories section is missing
+        # Thread-safe singleton initialization
+        with _pybliometrics_lock:
+            if _pybliometrics_initialized:
+                return True
+                
             try:
-                pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
-            except Exception as init_error:
-                if "Directories" in str(init_error):
-                    # Config file exists but missing Directories section - recreate it
-                    cache_dir = os.path.join(tempfile.gettempdir(), "pybliometrics")
-                    os.makedirs(cache_dir, exist_ok=True)
-                    pybliometrics.init(keys=keys, inst_tokens=inst_tokens, config_dir=cache_dir)
-                else:
-                    raise
-            return True
-        except Exception as e:
-            print(f"[Scopus] pybliometrics initialization failed: {e}")
-            return False
+                # Get API key from instance or environment
+                api_key = self.api_key or os.getenv("SCOPUS_API_KEY") or os.getenv("ELS_API_KEY")
+                inst_token = os.getenv("ELS_INSTTOKEN")
+                
+                if not api_key:
+                    print("[Scopus] No API key found in environment or instance")
+                    return False
+                
+                # Initialize pybliometrics with API keys to avoid interactive prompts
+                keys = [api_key]
+                inst_tokens = [inst_token] if inst_token else None
+                
+                try:
+                    pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
+                    _pybliometrics_initialized = True
+                    return True
+                except Exception as init_error:
+                    # If initialization fails, try to diagnose the issue
+                    error_msg = str(init_error)
+                    if "Directories" in error_msg:
+                        print(f"[Scopus] Config error: {error_msg}")
+                        print("[Scopus] Try deleting ~/.config/pybliometrics.cfg and restart")
+                    else:
+                        print(f"[Scopus] pybliometrics initialization failed: {error_msg}")
+                    return False
+            except Exception as e:
+                print(f"[Scopus] pybliometrics initialization failed: {e}")
+                return False
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """
@@ -511,43 +521,50 @@ class ScienceDirectCrawler(BaseCrawler):
         self.use_pybliometrics = PYBLIOMETRICS_AVAILABLE
 
     def _initialize_pybliometrics(self) -> bool:
-        """Initialize pybliometrics if not already done.
+        """Initialize pybliometrics if not already done (thread-safe singleton).
         
         pybliometrics uses config file ~/.config/pybliometrics.cfg.
         Pass API keys programmatically to avoid interactive prompts.
         """
+        global _pybliometrics_initialized
+        
         if not self.use_pybliometrics:
             return False
-        try:
-            # Get API key from instance or environment
-            api_key = self.api_key or os.getenv("SCIENCEDIRECT_API_KEY") or os.getenv("ELS_API_KEY")
-            inst_token = os.getenv("ELS_INSTTOKEN")
             
-            if not api_key:
-                print("[ScienceDirect] No API key found in environment or instance")
-                return False
-            
-            # Initialize pybliometrics with API keys to avoid interactive prompts
-            # Force creation of config directories if missing
-            import tempfile
-            keys = [api_key]
-            inst_tokens = [inst_token] if inst_token else None
-            
-            # Create a temporary directory for cache if Directories section is missing
+        # Thread-safe singleton initialization
+        with _pybliometrics_lock:
+            if _pybliometrics_initialized:
+                return True
+                
             try:
-                pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
-            except Exception as init_error:
-                if "Directories" in str(init_error):
-                    # Config file exists but missing Directories section - recreate it
-                    cache_dir = os.path.join(tempfile.gettempdir(), "pybliometrics")
-                    os.makedirs(cache_dir, exist_ok=True)
-                    pybliometrics.init(keys=keys, inst_tokens=inst_tokens, config_dir=cache_dir)
-                else:
-                    raise
-            return True
-        except Exception as e:
-            print(f"[ScienceDirect] pybliometrics initialization failed: {e}")
-            return False
+                # Get API key from instance or environment
+                api_key = self.api_key or os.getenv("SCIENCEDIRECT_API_KEY") or os.getenv("ELS_API_KEY")
+                inst_token = os.getenv("ELS_INSTTOKEN")
+                
+                if not api_key:
+                    print("[ScienceDirect] No API key found in environment or instance")
+                    return False
+                
+                # Initialize pybliometrics with API keys to avoid interactive prompts
+                keys = [api_key]
+                inst_tokens = [inst_token] if inst_token else None
+                
+                try:
+                    pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
+                    _pybliometrics_initialized = True
+                    return True
+                except Exception as init_error:
+                    # If initialization fails, try to diagnose the issue
+                    error_msg = str(init_error)
+                    if "Directories" in error_msg:
+                        print(f"[ScienceDirect] Config error: {error_msg}")
+                        print("[ScienceDirect] Try deleting ~/.config/pybliometrics.cfg and restart")
+                    else:
+                        print(f"[ScienceDirect] pybliometrics initialization failed: {error_msg}")
+                    return False
+            except Exception as e:
+                print(f"[ScienceDirect] pybliometrics initialization failed: {e}")
+                return False
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """

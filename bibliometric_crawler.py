@@ -609,6 +609,15 @@ Provide your analysis as a JSON object with:
                     json_end = filtering_guidance.find("```", json_start)
                     filtering_guidance = filtering_guidance[json_start:json_end]
 
+                # Repair common JSON issues from LLM responses
+                # Fix string concatenation in JSON (e.g., "value": "a" + "b" + "c")
+                import re
+                filtering_guidance = re.sub(
+                    r'"\s*\+\s*"',  # Match " + " patterns
+                    '',  # Replace with empty string to join strings
+                    filtering_guidance
+                )
+                
                 guidance = json.loads(filtering_guidance.strip())
                 filtering_provider = {"provider": "groq", "model": self.groq_model}
             except json.JSONDecodeError as je:

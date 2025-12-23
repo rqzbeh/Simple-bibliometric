@@ -10,7 +10,7 @@ cerebras_cloud_sdk
 clarivate-wos-starter-python-client @ git+https://github.com/clarivate/wosstarter_python_client.git
 pybliometrics>=1.11.0
 springernature-api-client>=0.1.0
-xploreapi>=2.0.0
+# xploreapi>=2.0.0  # Package does not exist on PyPI as of 2024
 ebscopy>=3.0.0
 
 # Data analysis & statistical libraries
