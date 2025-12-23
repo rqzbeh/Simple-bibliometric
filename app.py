@@ -122,7 +122,7 @@ def display_time_series(time_series: Dict[int, int], forecast: Dict[str, Any]):
         {"year": list(time_series.keys()), "count": list(time_series.values())}
     ).sort_values("year")
     fig = px.line(df_hist, x="year", y="count", title="Publications per year (history)")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # Forecast: expected structure is a dict with years -> {predicted, ci_low, ci_high} or simple numeric
     if forecast and isinstance(forecast.get("forecast"), dict):
@@ -147,7 +147,7 @@ def display_time_series(time_series: Dict[int, int], forecast: Dict[str, Any]):
                 df_fc, x="year", y="predicted", title="Forecast (next years)"
             )
             # also show history points
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width="stretch")
             st.dataframe(df_fc)
 
 
@@ -423,7 +423,7 @@ def run_analysis_and_render(
                         y="n_publications",
                         title="Top authors (publications)",
                     )
-                    st.plotly_chart(fig_pub, use_container_width=True)
+                    st.plotly_chart(fig_pub, width="stretch")
             except Exception as e:
                 st.warning(f"Could not render publications chart: {e}")
 
@@ -436,7 +436,7 @@ def run_analysis_and_render(
                         y="total_citations",
                         title="Top authors (citations)",
                     )
-                    st.plotly_chart(fig_cit, use_container_width=True)
+                    st.plotly_chart(fig_cit, width="stretch")
             except Exception as e:
                 st.warning(f"Could not render citations chart: {e}")
 
@@ -450,7 +450,7 @@ def run_analysis_and_render(
             degrees = [d for _, d in graph.degree()]
             if px is not None:
                 fig_deg = px.histogram(x=degrees, nbins=30, title="Degree distribution")
-                st.plotly_chart(fig_deg, use_container_width=True)
+                st.plotly_chart(fig_deg, width="stretch")
         except Exception as e:
             st.warning(f"Could not compute network diagnostics: {e}")
 

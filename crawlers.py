@@ -412,10 +412,22 @@ class ScopusCrawler(BaseCrawler):
                 return False
             
             # Initialize pybliometrics with API keys to avoid interactive prompts
-            # This is safe to call multiple times
+            # Force creation of config directories if missing
+            import tempfile
             keys = [api_key]
             inst_tokens = [inst_token] if inst_token else None
-            pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
+            
+            # Create a temporary directory for cache if Directories section is missing
+            try:
+                pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
+            except Exception as init_error:
+                if "Directories" in str(init_error):
+                    # Config file exists but missing Directories section - recreate it
+                    cache_dir = os.path.join(tempfile.gettempdir(), "pybliometrics")
+                    os.makedirs(cache_dir, exist_ok=True)
+                    pybliometrics.init(keys=keys, inst_tokens=inst_tokens, config_dir=cache_dir)
+                else:
+                    raise
             return True
         except Exception as e:
             print(f"[Scopus] pybliometrics initialization failed: {e}")
@@ -516,10 +528,22 @@ class ScienceDirectCrawler(BaseCrawler):
                 return False
             
             # Initialize pybliometrics with API keys to avoid interactive prompts
-            # This is safe to call multiple times
+            # Force creation of config directories if missing
+            import tempfile
             keys = [api_key]
             inst_tokens = [inst_token] if inst_token else None
-            pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
+            
+            # Create a temporary directory for cache if Directories section is missing
+            try:
+                pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
+            except Exception as init_error:
+                if "Directories" in str(init_error):
+                    # Config file exists but missing Directories section - recreate it
+                    cache_dir = os.path.join(tempfile.gettempdir(), "pybliometrics")
+                    os.makedirs(cache_dir, exist_ok=True)
+                    pybliometrics.init(keys=keys, inst_tokens=inst_tokens, config_dir=cache_dir)
+                else:
+                    raise
             return True
         except Exception as e:
             print(f"[ScienceDirect] pybliometrics initialization failed: {e}")
@@ -542,9 +566,10 @@ class ScienceDirectCrawler(BaseCrawler):
         try:
             # ScienceDirectSearch handles the query
             # max_results controls how many results to return
+            # Note: ScienceDirect API only supports 'STANDARD' view parameter
             search_results = ScienceDirectSearch(
                 query=query,
-                view="COMPLETE",
+                view="STANDARD",
                 refresh=False  # Use cached results if available
             )
 
