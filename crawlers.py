@@ -372,14 +372,24 @@ class ScopusCrawler(BaseCrawler):
         """Initialize pybliometrics if not already done.
         
         pybliometrics uses config file ~/.config/pybliometrics.cfg.
-        Call pybliometrics.init() to set it up if needed.
+        Pass API keys programmatically to avoid interactive prompts.
         """
         if not self.use_pybliometrics:
             return False
         try:
-            # Call init to ensure config is loaded
+            # Get API key from instance or environment
+            api_key = self.api_key or os.getenv("SCOPUS_API_KEY") or os.getenv("ELS_API_KEY")
+            inst_token = os.getenv("ELS_INSTTOKEN")
+            
+            if not api_key:
+                print("[Scopus] No API key found in environment or instance")
+                return False
+            
+            # Initialize pybliometrics with API keys to avoid interactive prompts
             # This is safe to call multiple times
-            pybliometrics.init()
+            keys = [api_key]
+            inst_tokens = [inst_token] if inst_token else None
+            pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
             return True
         except Exception as e:
             print(f"[Scopus] pybliometrics initialization failed: {e}")
@@ -466,14 +476,24 @@ class ScienceDirectCrawler(BaseCrawler):
         """Initialize pybliometrics if not already done.
         
         pybliometrics uses config file ~/.config/pybliometrics.cfg.
-        Call pybliometrics.init() to set it up if needed.
+        Pass API keys programmatically to avoid interactive prompts.
         """
         if not self.use_pybliometrics:
             return False
         try:
-            # Call init to ensure config is loaded
+            # Get API key from instance or environment
+            api_key = self.api_key or os.getenv("SCIENCEDIRECT_API_KEY") or os.getenv("ELS_API_KEY")
+            inst_token = os.getenv("ELS_INSTTOKEN")
+            
+            if not api_key:
+                print("[ScienceDirect] No API key found in environment or instance")
+                return False
+            
+            # Initialize pybliometrics with API keys to avoid interactive prompts
             # This is safe to call multiple times
-            pybliometrics.init()
+            keys = [api_key]
+            inst_tokens = [inst_token] if inst_token else None
+            pybliometrics.init(keys=keys, inst_tokens=inst_tokens)
             return True
         except Exception as e:
             print(f"[ScienceDirect] pybliometrics initialization failed: {e}")
