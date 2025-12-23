@@ -23,13 +23,19 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TYPE_CHECKING, Optional, Union
 
-# Visualization / data libs
-try:
+if TYPE_CHECKING:
     import pandas as pd
-except Exception:
-    pd = None  # type: ignore
+    import networkx as nx
+    from bibliometric_crawler import BibliometricCrawler
+
+# Visualization / data libs (runtime imports)
+if not TYPE_CHECKING:
+    try:
+        import pandas as pd
+    except Exception:
+        pd = None  # type: ignore
 
 try:
     import plotly.express as px
@@ -41,10 +47,11 @@ import streamlit.components.v1 as components
 
 # Optional heavy import used for filtering and GEXF export in the interactive dashboard.
 # Wrapped in a try/except so the app can still run when networkx isn't available.
-try:
-    import networkx as nx
-except Exception:
-    nx = None  # type: ignore
+if not TYPE_CHECKING:
+    try:
+        import networkx as nx
+    except Exception:
+        nx = None  # type: ignore
 
 # Local analysis utilities
 from bibliometrics import (
@@ -57,12 +64,15 @@ from bibliometrics import (
 )
 
 # Optional: LLM summarization via kubectl Groq/Cerebras fallback (bibliometric_crawler)
-try:
-    from bibliometric_crawler import BibliometricCrawler
+if not TYPE_CHECKING:
+    try:
+        from bibliometric_crawler import BibliometricCrawler
 
-    LLM_AVAILABLE = True
-except Exception:
-    BibliometricCrawler = None  # type: ignore
+        LLM_AVAILABLE = True
+    except Exception:
+        BibliometricCrawler = None  # type: ignore
+        LLM_AVAILABLE = False
+else:
     LLM_AVAILABLE = False
 
 
@@ -72,7 +82,7 @@ def safe_filename(s: str) -> str:
     return s[:120]
 
 
-def authors_to_dataframe(authors: List[Any]):
+def authors_to_dataframe(authors: List[Any]) -> Union['pd.DataFrame', List[Dict[str, Any]]]:
     """Convert list of AuthorMetrics dataclasses to a DataFrame (if pandas available) or a list.
 
     Use a local import to avoid NameErrors/UnboundLocalError when Streamlit reloads modules.
@@ -146,7 +156,7 @@ def summarize_with_llm(query: str, result_summary: Dict[str, Any]) -> str:
     Use Groq/Cerebras via BibliometricCrawler to produce a natural-language summary.
     This will call external LLM services; ensure API keys are configured.
     """
-    if not LLM_AVAILABLE:
+    if not LLM_AVAILABLE or BibliometricCrawler is None:
         return "LLM summarization not available in this environment."
 
     # We'll instantiate the crawler (it will manage Groq/Cerebras fallback)
@@ -189,7 +199,7 @@ Return a brief paragraph summary."""
             max_tokens=250,
         )
         text = response.choices[0].message.content
-        return text
+        return text if text is not None else "No response from LLM."
     except Exception as e:
         # Try Cerebras fallback if available (BibliometricCrawler also handles fallback on analyze path,
         # but for direct calls we surface an explanatory error)
@@ -215,6 +225,9 @@ def run_analysis_and_render(
     with st.spinner("Collecting publications and analyzing..."):
         if use_ai:
             # Use AI pipeline
+            if not LLM_AVAILABLE or BibliometricCrawler is None:
+                st.error("AI summarization not available in this environment.")
+                return
             try:
                 bc = BibliometricCrawler()
             except Exception as e:
@@ -390,18 +403,22 @@ def run_analysis_and_render(
         col_table, col_vis = st.columns([2, 3])
         with col_table:
             if hasattr(df_auth, "to_csv"):
-                csv = df_auth.to_csv(index=False).encode("utf-8")
+                # df_auth is a DataFrame
+                csv = df_auth.to_csv(index=False).encode("utf-8")  # type: ignore
                 st.download_button(
                     "Download top authors CSV", csv, file_name="top_authors.csv"
                 )
-            st.dataframe(df_auth.head(50))
+            if hasattr(df_auth, "head"):
+                st.dataframe(df_auth.head(50))  # type: ignore
+            else:
+                st.write(df_auth)  # Fallback for list
 
         with col_vis:
             st.markdown("#### Top authors (by publications)")
             try:
-                if px is not None:
+                if px is not None and hasattr(df_auth, "head"):
                     fig_pub = px.bar(
-                        df_auth.head(20),
+                        df_auth.head(20),  # type: ignore
                         x="author",
                         y="n_publications",
                         title="Top authors (publications)",
@@ -412,9 +429,9 @@ def run_analysis_and_render(
 
             st.markdown("#### Top authors (by citations)")
             try:
-                if px is not None:
+                if px is not None and hasattr(df_auth, "head"):
                     fig_cit = px.bar(
-                        df_auth.head(20),
+                        df_auth.head(20),  # type: ignore
                         x="author",
                         y="total_citations",
                         title="Top authors (citations)",
@@ -467,14 +484,19 @@ def run_analysis_and_render(
                     st.warning("Author not found in the co-authorship network.")
                 else:
                     try:
-                        ego = nx.ego_graph(graph, target, radius=1)
-                        ego_html = os.path.join(
-                            out_dir,
-                            f"{safe_filename(query)}_ego_{safe_filename(selected_author)}.html",
-                        )
-                        visualize_pyvis(ego, ego_html)
-                        with open(ego_html, "r", encoding="utf-8") as fh:
-                            components.html(fh.read(), height=600, scrolling=True)
+                        if nx is None:
+                            st.error("NetworkX not available for ego graph.")
+                        else:
+                            ego = nx.ego_graph(graph, target, radius=1)
+                            safe_query = safe_filename(query) if query else "query"
+                            safe_author = safe_filename(selected_author) if selected_author else "author"
+                            ego_html = os.path.join(
+                                out_dir,
+                                f"{safe_query}_ego_{safe_author}.html",
+                            )
+                            visualize_pyvis(ego, ego_html)
+                            with open(ego_html, "r", encoding="utf-8") as fh:
+                                components.html(fh.read(), height=600, scrolling=True)
                     except Exception as e:
                         st.error(f"Could not render ego network: {e}")
         except Exception as e:
