@@ -183,33 +183,33 @@ class BaseCrawler(ABC):
 
 
 class WoSCrawler(BaseCrawler):
-    """Web of Science API Crawler
+    """Web of Science Starter API Crawler
 
-    API Documentation: https://api.clarivate.com/swagger-ui/?apikey=none&url=https%3A%2F%2Fdeveloper.clarivate.com%2Fapis%2Fwos%2Fswagger
+    API Documentation: https://developer.clarivate.com/apis/wos-starter
+    Uses the modern WoS Starter API v1 endpoint (free and recommended)
     """
 
     env_var = "WOS_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
-        self.base_url = "https://api.clarivate.com/api/wos"
-        self.requests_per_second = 1
+        self.base_url = "https://api.clarivate.com/apis/wos-starter/v1"
+        self.requests_per_second = 5  # WoS Starter API allows 5 req/sec
 
     def _get_headers(self) -> Dict[str, str]:
-        """Override headers for WoS API"""
+        """Override headers for WoS Starter API"""
         headers = {
             "Accept": "application/json",
             "User-Agent": "BibliometricCrawler/1.0",
         }
         if self.api_key:
-            # Some providers may expect different capitalizations; include both to be robust
             headers["X-ApiKey"] = self.api_key
-            headers["X-APIKey"] = self.api_key
         return headers
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """
-        Search Web of Science database
+        Search Web of Science Starter API database
+        Uses Web of Science Query Language (e.g., "TI=(cancer)" for title search)
         """
         print(f"[WoS] Searching for: {query}")
 
@@ -218,51 +218,45 @@ class WoSCrawler(BaseCrawler):
             return []
 
         try:
+            # Build WoS QL query: TI=title, AU=author, DO=DOI, PY=year, TS=topic
+            # Default to topic search if no field tag provided
+            if "=" not in query:
+                wos_query = f"TS=({query})"
+            else:
+                wos_query = query
+
             params = {
-                "databaseId": "WOS",
-                "usrQuery": query,
-                "count": min(max_results, 100),
-                "firstRecord": 1,
+                "q": wos_query,
+                "db": "WOS",
+                "limit": min(max_results, 50),  # Max 50 per request
+                "page": 1,
+                "sort_field": "TC+D",  # Sort by Times Cited descending
             }
 
-            response = self._make_request("", params=params)
+            response = self._make_request("/documents", params=params)
 
-            if not response or "Data" not in response:
+            if not response or "hits" not in response:
                 return []
 
-            records = (
-                response.get("Data", {})
-                .get("Records", {})
-                .get("records", {})
-                .get("REC", [])
-            )
+            hits = response.get("hits", [])
             results = []
 
-            for record in records:
-                static_data = record.get("static_data", {})
-                summary = static_data.get("summary", {})
-                titles = summary.get("titles", {}).get("title", [])
-                title = titles[0].get("content", "") if titles else ""
-
+            for hit in hits:
                 result = {
-                    "title": title,
+                    "title": hit.get("title", ""),
                     "authors": [
-                        name.get("full_name", "")
-                        for name in summary.get("names", {}).get("name", [])
+                        author.get("full_name", "")
+                        for author in hit.get("authors", [])
                     ],
-                    "year": summary.get("pub_info", {}).get("@pubyear", ""),
-                    "doi": static_data.get("fullrecord_metadata", {})
-                    .get("references", {})
-                    .get("reference", [{}])[0]
-                    .get("doi", ""),
-                    "abstract": "",
+                    "year": str(hit.get("year", "")),
+                    "doi": hit.get("identifiers", {}).get("doi", ""),
+                    "abstract": hit.get("abstract", ""),
                     "source": "WoS",
-                    "citations": record.get("dynamic_data", {})
-                    .get("citation_related", {})
+                    "citations": hit.get("citations", {})
                     .get("tc_list", {})
                     .get("silo_tc", {})
-                    .get("@local_count", 0),
-                    "url": f"https://www.webofscience.com/wos/woscc/full-record/{record.get('UID', '')}",
+                    .get("local_count", 0),
+                    "url": f"https://www.webofscience.com/wos/woscc/full-record/{hit.get('uid', '')}",
                 }
                 results.append(result)
 
