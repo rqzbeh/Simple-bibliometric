@@ -330,16 +330,18 @@ class ScopusCrawler(BaseCrawler):
         return None
 
     def _get_headers(self) -> Dict[str, str]:
-        """Override headers for Scopus API"""
+        """Override headers for Scopus API
+        
+        Official header name: X-ELS-APIKey (uppercase APIKey)
+        Reference: https://dev.elsevier.com/tecdoc_api_authentication.html
+        """
         headers = {
             "Accept": "application/json",
             "User-Agent": "BibliometricCrawler/1.0",
         }
         if self.api_key:
             headers["X-ELS-APIKey"] = self.api_key
-            # Add alternative capitalization for robustness
-            headers["X-ELS-ApiKey"] = self.api_key
-        # If an insttoken is configured in the environment, include it
+        # Insttoken support (server-side only, must use HTTPS)
         insttoken = os.getenv("ELS_INSTTOKEN")
         if insttoken:
             headers["X-ELS-Insttoken"] = insttoken
@@ -466,14 +468,18 @@ class ScienceDirectCrawler(BaseCrawler):
         return None
 
     def _get_headers(self) -> Dict[str, str]:
-        """Override headers for ScienceDirect API"""
+        """Override headers for ScienceDirect API
+        
+        Official header name: X-ELS-APIKey (uppercase APIKey)
+        Reference: https://dev.elsevier.com/tecdoc_api_authentication.html
+        """
         headers = {
             "Accept": "application/json",
             "User-Agent": "BibliometricCrawler/1.0",
         }
         if self.api_key:
             headers["X-ELS-APIKey"] = self.api_key
-        # Insttoken support
+        # Insttoken support (server-side only, must use HTTPS)
         insttoken = os.getenv("ELS_INSTTOKEN")
         if insttoken:
             headers["X-ELS-Insttoken"] = insttoken
