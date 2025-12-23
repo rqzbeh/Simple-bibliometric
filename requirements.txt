@@ -8,6 +8,7 @@ pubchempy
 habanero
 cerebras_cloud_sdk
 clarivate-wos-starter-python-client @ git+https://github.com/clarivate/wosstarter_python_client.git
+pybliometrics>=1.11.0
 
 # Data analysis & statistical libraries
 pandas>=1.5.0

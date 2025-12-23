@@ -45,6 +45,16 @@ except Exception:
     Cerebras = None
     CEREBRAS_AVAILABLE = False
 
+try:
+    import pybliometrics
+    from pybliometrics.scopus import ScopusSearch, AbstractRetrieval
+    from pybliometrics.sciencedirect import ScienceDirectSearch, ArticleRetrieval
+
+    PYBLIOMETRICS_AVAILABLE = True
+except Exception:
+    pybliometrics = None
+    PYBLIOMETRICS_AVAILABLE = False
+
 
 class BaseCrawler(ABC):
     """Base class for all academic database crawlers"""
@@ -346,137 +356,89 @@ class WoSCrawler(BaseCrawler):
 class ScopusCrawler(BaseCrawler):
     """Scopus API Crawler
 
-    API Documentation: https://dev.elsevier.com/technical_documentation.html
+    Uses the official pybliometrics library which wraps Elsevier's Scopus API.
+    API Documentation: https://pybliometrics.readthedocs.io/en/stable/
     """
 
     env_var = "SCOPUS_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
-        self.base_url = "https://api.elsevier.com/content/search/scopus"
-        self.requests_per_second = 1
-        # Authtoken caching (authtoken expires after ~2 hours)
-        self._authtoken: Optional[str] = None
-        self._authtoken_ts: Optional[float] = None
+        # pybliometrics handles config automatically via ~/.config/pybliometrics.cfg
+        # API key is not directly used in initialization; pybliometrics manages auth
+        self.use_pybliometrics = PYBLIOMETRICS_AVAILABLE
 
-    def _get_authtoken(self) -> Optional[str]:
-        """Request an authtoken from Elsevier Authentication API and cache it."""
-        import time
-        import xml.etree.ElementTree as ET
-
-        # If token present and not expired (2 hours), return cached
-        if self._authtoken and self._authtoken_ts and (time.time() - self._authtoken_ts) < (2 * 3600 - 60):
-            return self._authtoken
-
-        # Call Authentication endpoint
-        auth_url = "https://api.elsevier.com/authenticate?platform=SCOPUS"
-        headers = {"X-ELS-APIKey": self.api_key} if self.api_key else {}
-        try:
-            print(f"[{self.__class__.__name__}] Attempting authtoken exchange: {auth_url}")
-            r = requests.get(auth_url, headers=headers, timeout=30)
-            print(f"[{self.__class__.__name__}] Authtoken response status: {r.status_code}")
-            r.raise_for_status()
-            text = r.text
-            # Parse XML for authtoken
-            try:
-                root = ET.fromstring(text)
-                node = root.find('.//authtoken')
-                if node is not None and node.text:
-                    self._authtoken = node.text.strip()
-                    self._authtoken_ts = time.time()
-                    print(f"[{self.__class__.__name__}] Authtoken obtained successfully")
-                    return self._authtoken
-                else:
-                    print(f"[{self.__class__.__name__}] No authtoken in XML response")
-            except ET.ParseError as pe:
-                print(f"[{self.__class__.__name__}] XML parse error: {pe}")
-                # Maybe JSON or plain text; try to look for token in JSON
-                try:
-                    j = r.json()
-                    tok = j.get('authtoken') or j.get('authToken')
-                    if tok:
-                        self._authtoken = tok
-                        self._authtoken_ts = time.time()
-                        print(f"[{self.__class__.__name__}] Authtoken obtained from JSON")
-                        return self._authtoken
-                except Exception as je:
-                    print(f"[{self.__class__.__name__}] JSON parse error: {je}")
-        except Exception as e:
-            print(f"[{self.__class__.__name__}] Authtoken exchange failed: {e}")
-        return None
-
-    def _get_headers(self) -> Dict[str, str]:
-        """Override headers for Scopus API
+    def _initialize_pybliometrics(self) -> bool:
+        """Initialize pybliometrics if not already done.
         
-        Official header name: X-ELS-APIKey (uppercase APIKey)
-        Reference: https://dev.elsevier.com/tecdoc_api_authentication.html
+        pybliometrics uses config file ~/.config/pybliometrics.cfg.
+        Call pybliometrics.init() to set it up if needed.
         """
-        headers = {
-            "Accept": "application/json",
-            "User-Agent": "BibliometricCrawler/1.0",
-        }
-        if self.api_key:
-            headers["X-ELS-APIKey"] = self.api_key
-        # Insttoken support (server-side only, must use HTTPS)
-        insttoken = os.getenv("ELS_INSTTOKEN")
-        if insttoken:
-            headers["X-ELS-Insttoken"] = insttoken
-        # Attempt to obtain authtoken and include it when present
-        at = self._get_authtoken()
-        if at:
-            headers["X-ELS-AuthToken"] = at
-            headers["X-ELS-Authtoken"] = at
-        return headers
+        if not self.use_pybliometrics:
+            return False
+        try:
+            # Call init to ensure config is loaded
+            # This is safe to call multiple times
+            pybliometrics.init()
+            return True
+        except Exception as e:
+            print(f"[Scopus] pybliometrics initialization failed: {e}")
+            return False
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """
-        Search Scopus database using Elsevier API
+        Search Scopus database using pybliometrics library.
+        Returns a list of article metadata.
         """
         print(f"[Scopus] Searching for: {query}")
 
-        if not self.api_key:
-            print("[Scopus] API key required")
+        if not self.use_pybliometrics:
+            print("[Scopus] pybliometrics not available, returning empty results")
+            return []
+
+        if not self._initialize_pybliometrics():
             return []
 
         try:
-            params = {
-                "query": query,
-                "count": min(max_results, 25),  # Max 25 per request
-                "start": 0,
-                "view": "COMPLETE",
-            }
+            # ScopusSearch handles the query and pagination
+            # max_results controls how many results to return
+            search_results = ScopusSearch(
+                query=query,
+                view="COMPLETE",
+                refresh=False  # Use cached results if available
+            )
 
-            response = self._make_request("", params=params)
-
-            if not response or "search-results" not in response:
-                return []
-
-            entries = response.get("search-results", {}).get("entry", [])
             results = []
+            # Iterate through results (pybliometrics handles pagination internally)
+            for i, article in enumerate(search_results):
+                if i >= max_results:
+                    break
 
-            for entry in entries:
-                # Skip error entries
-                if "error" in entry:
+                try:
+                    # article is a namedtuple with scopus metadata
+                    result = {
+                        "title": getattr(article, "title", ""),
+                        "authors": [getattr(article, "author_names", "")]
+                        if hasattr(article, "author_names")
+                        else [],
+                        "year": str(getattr(article, "coverDate", ""))[:4]
+                        if hasattr(article, "coverDate")
+                        else "",
+                        "doi": getattr(article, "doi", ""),
+                        "abstract": getattr(article, "description", ""),
+                        "source": "Scopus",
+                        "citations": int(getattr(article, "citedby_count", 0))
+                        if hasattr(article, "citedby_count")
+                        else 0,
+                        "url": getattr(article, "url", ""),
+                        "journal": getattr(article, "publicationName", ""),
+                        "issn": getattr(article, "issn", ""),
+                        "scopus_id": getattr(article, "eid", ""),
+                    }
+                    results.append(result)
+                except Exception as e:
+                    print(f"[Scopus] Error parsing article {i}: {e}")
                     continue
-
-                result = {
-                    "title": entry.get("dc:title", ""),
-                    "authors": [entry.get("dc:creator", "")],
-                    "year": entry.get("prism:coverDate", "")[:4]
-                    if entry.get("prism:coverDate")
-                    else "",
-                    "doi": entry.get("prism:doi", ""),
-                    "abstract": entry.get("dc:description", ""),
-                    "source": "Scopus",
-                    "citations": int(entry.get("citedby-count", 0)),
-                    "url": entry.get("prism:url", ""),
-                    "journal": entry.get("prism:publicationName", ""),
-                    "issn": entry.get("prism:issn", ""),
-                    "scopus_id": entry.get("dc:identifier", "").replace(
-                        "SCOPUS_ID:", ""
-                    ),
-                }
-                results.append(result)
 
             return results
 
@@ -488,128 +450,86 @@ class ScopusCrawler(BaseCrawler):
 class ScienceDirectCrawler(BaseCrawler):
     """ScienceDirect API Crawler
 
-    API Documentation: https://dev.elsevier.com/technical_documentation.html
+    Uses the official pybliometrics library which wraps Elsevier's ScienceDirect API.
+    API Documentation: https://pybliometrics.readthedocs.io/en/stable/
     """
 
     env_var = "SCIENCEDIRECT_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
-        self.base_url = "https://api.elsevier.com/content/search/sciencedirect"
-        self.requests_per_second = 1
-        # Authtoken caching
-        self._authtoken: Optional[str] = None
-        self._authtoken_ts: Optional[float] = None
+        # pybliometrics handles config automatically via ~/.config/pybliometrics.cfg
+        # API key is not directly used in initialization; pybliometrics manages auth
+        self.use_pybliometrics = PYBLIOMETRICS_AVAILABLE
 
-    def _get_authtoken(self) -> Optional[str]:
-        """Request an authtoken from Elsevier Authentication API and cache it."""
-        import time
-        import xml.etree.ElementTree as ET
-
-        if self._authtoken and self._authtoken_ts and (time.time() - self._authtoken_ts) < (2 * 3600 - 60):
-            return self._authtoken
-
-        auth_url = "https://api.elsevier.com/authenticate?platform=SCIENCEDIRECT"
-        headers = {"X-ELS-APIKey": self.api_key} if self.api_key else {}
-        try:
-            print(f"[{self.__class__.__name__}] Attempting authtoken exchange: {auth_url}")
-            r = requests.get(auth_url, headers=headers, timeout=30)
-            print(f"[{self.__class__.__name__}] Authtoken response status: {r.status_code}")
-            r.raise_for_status()
-            text = r.text
-            try:
-                root = ET.fromstring(text)
-                node = root.find('.//authtoken')
-                if node is not None and node.text:
-                    self._authtoken = node.text.strip()
-                    self._authtoken_ts = time.time()
-                    print(f"[{self.__class__.__name__}] Authtoken obtained successfully")
-                    return self._authtoken
-                else:
-                    print(f"[{self.__class__.__name__}] No authtoken in XML response")
-            except ET.ParseError as pe:
-                print(f"[{self.__class__.__name__}] XML parse error: {pe}")
-                try:
-                    j = r.json()
-                    tok = j.get('authtoken') or j.get('authToken')
-                    if tok:
-                        self._authtoken = tok
-                        self._authtoken_ts = time.time()
-                        print(f"[{self.__class__.__name__}] Authtoken obtained from JSON")
-                        return self._authtoken
-                except Exception as je:
-                    print(f"[{self.__class__.__name__}] JSON parse error: {je}")
-        except Exception as e:
-            print(f"[{self.__class__.__name__}] Authtoken exchange failed: {e}")
-        return None
-
-    def _get_headers(self) -> Dict[str, str]:
-        """Override headers for ScienceDirect API
+    def _initialize_pybliometrics(self) -> bool:
+        """Initialize pybliometrics if not already done.
         
-        Official header name: X-ELS-APIKey (uppercase APIKey)
-        Reference: https://dev.elsevier.com/tecdoc_api_authentication.html
+        pybliometrics uses config file ~/.config/pybliometrics.cfg.
+        Call pybliometrics.init() to set it up if needed.
         """
-        headers = {
-            "Accept": "application/json",
-            "User-Agent": "BibliometricCrawler/1.0",
-        }
-        if self.api_key:
-            headers["X-ELS-APIKey"] = self.api_key
-        # Insttoken support (server-side only, must use HTTPS)
-        insttoken = os.getenv("ELS_INSTTOKEN")
-        if insttoken:
-            headers["X-ELS-Insttoken"] = insttoken
-        at = self._get_authtoken()
-        if at:
-            headers["X-ELS-AuthToken"] = at
-            headers["X-ELS-Authtoken"] = at
-        return headers
+        if not self.use_pybliometrics:
+            return False
+        try:
+            # Call init to ensure config is loaded
+            # This is safe to call multiple times
+            pybliometrics.init()
+            return True
+        except Exception as e:
+            print(f"[ScienceDirect] pybliometrics initialization failed: {e}")
+            return False
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
         """
-        Search ScienceDirect database using Elsevier API
+        Search ScienceDirect database using pybliometrics library.
+        Returns a list of article metadata.
         """
         print(f"[ScienceDirect] Searching for: {query}")
 
-        if not self.api_key:
-            print("[ScienceDirect] API key required")
+        if not self.use_pybliometrics:
+            print("[ScienceDirect] pybliometrics not available, returning empty results")
+            return []
+
+        if not self._initialize_pybliometrics():
             return []
 
         try:
-            params = {
-                "query": query,
-                "count": min(max_results, 25),  # Max 25 per request
-                "start": 0,
-                "view": "COMPLETE",
-            }
+            # ScienceDirectSearch handles the query
+            # max_results controls how many results to return
+            search_results = ScienceDirectSearch(
+                query=query,
+                view="COMPLETE",
+                refresh=False  # Use cached results if available
+            )
 
-            response = self._make_request("", params=params)
-
-            if not response or "search-results" not in response:
-                return []
-
-            entries = response.get("search-results", {}).get("entry", [])
             results = []
+            # Iterate through results
+            for i, article in enumerate(search_results):
+                if i >= max_results:
+                    break
 
-            for entry in entries:
-                if "error" in entry:
+                try:
+                    # article is a namedtuple with ScienceDirect metadata
+                    result = {
+                        "title": getattr(article, "title", ""),
+                        "authors": [getattr(article, "author_names", "")]
+                        if hasattr(article, "author_names")
+                        else [],
+                        "year": str(getattr(article, "coverDate", ""))[:4]
+                        if hasattr(article, "coverDate")
+                        else "",
+                        "doi": getattr(article, "doi", ""),
+                        "abstract": getattr(article, "description", ""),
+                        "source": "ScienceDirect",
+                        "citations": 0,  # ScienceDirect API doesn't provide citation counts
+                        "url": getattr(article, "url", ""),
+                        "journal": getattr(article, "publicationName", ""),
+                        "pii": getattr(article, "pii", ""),
+                    }
+                    results.append(result)
+                except Exception as e:
+                    print(f"[ScienceDirect] Error parsing article {i}: {e}")
                     continue
-
-                result = {
-                    "title": entry.get("dc:title", ""),
-                    "authors": [entry.get("dc:creator", "")],
-                    "year": entry.get("prism:coverDate", "")[:4]
-                    if entry.get("prism:coverDate")
-                    else "",
-                    "doi": entry.get("prism:doi", ""),
-                    "abstract": entry.get("dc:description", ""),
-                    "source": "ScienceDirect",
-                    "citations": 0,
-                    "url": entry.get("prism:url", ""),
-                    "journal": entry.get("prism:publicationName", ""),
-                    "pii": entry.get("pii", ""),
-                }
-                results.append(result)
 
             return results
 
