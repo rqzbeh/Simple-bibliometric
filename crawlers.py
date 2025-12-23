@@ -185,19 +185,57 @@ class BaseCrawler(ABC):
 class WoSCrawler(BaseCrawler):
     """Web of Science Starter API Crawler
 
+    Uses official Clarivate WoS Starter API v1 client library.
     API Documentation: https://developer.clarivate.com/apis/wos-starter
-    Uses the modern WoS Starter API v1 endpoint (free and recommended)
+    Client Repository: https://github.com/clarivate/wosstarter_python_client
     """
 
     env_var = "WOS_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
+        # Note: Base URL not used; client handles it internally
         self.base_url = "https://api.clarivate.com/apis/wos-starter/v1"
         self.requests_per_second = 5  # WoS Starter API allows 5 req/sec
+        self._client = None
+        self._api_instance = None
+
+    def _get_client(self):
+        """Initialize and return the official Clarivate API client."""
+        if self._api_instance is not None:
+            return self._api_instance
+
+        try:
+            import clarivate.wos_starter.client
+
+            # Configure API client
+            config = clarivate.wos_starter.client.Configuration(
+                host=self.base_url
+            )
+            config.api_key['ClarivateApiKeyAuth'] = self.api_key
+
+            # Create client and API instance
+            self._client = clarivate.wos_starter.client.ApiClient(config)
+            self._api_instance = clarivate.wos_starter.client.DocumentsApi(
+                self._client
+            )
+            return self._api_instance
+        except ImportError:
+            print(
+                "[WoS] Official Clarivate client not installed. "
+                "Install with: pip install git+https://github.com/clarivate/wosstarter_python_client.git"
+            )
+            return None
+        except Exception as e:
+            print(f"[WoS] Failed to initialize client: {e}")
+            return None
 
     def _get_headers(self) -> Dict[str, str]:
-        """Override headers for WoS Starter API"""
+        """Override headers for WoS Starter API
+
+        Note: Official client handles headers internally.
+        This method is provided for consistency with other crawlers.
+        """
         headers = {
             "Accept": "application/json",
             "User-Agent": "BibliometricCrawler/1.0",
@@ -207,8 +245,8 @@ class WoSCrawler(BaseCrawler):
         return headers
 
     def search(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
-        """
-        Search Web of Science Starter API database
+        """Search Web of Science Starter database using official client.
+
         Uses Web of Science Query Language (e.g., "TI=(cancer)" for title search)
         """
         print(f"[WoS] Searching for: {query}")
@@ -217,51 +255,89 @@ class WoSCrawler(BaseCrawler):
             print("[WoS] API key required")
             return []
 
+        api_instance = self._get_client()
+        if api_instance is None:
+            print("[WoS] Failed to initialize API client")
+            return []
+
         try:
-            # Build WoS QL query: TI=title, AU=author, DO=DOI, PY=year, TS=topic
+            from clarivate.wos_starter.client.rest import ApiException
+
+            # Convert simple query to WoS Query Language if needed
             # Default to topic search if no field tag provided
             if "=" not in query:
                 wos_query = f"TS=({query})"
             else:
                 wos_query = query
 
-            params = {
-                "q": wos_query,
-                "db": "WOS",
-                "limit": min(max_results, 50),  # Max 50 per request
-                "page": 1,
-                "sort_field": "TC+D",  # Sort by Times Cited descending
-            }
+            # Call the official client
+            response = api_instance.documents_get(
+                q=wos_query,
+                db="WOS",
+                limit=min(max_results, 50),  # Max 50 per request
+                page=1,
+                sort_field="TC+D",  # Sort by Times Cited descending
+            )
 
-            response = self._make_request("/documents", params=params)
-
-            if not response or "hits" not in response:
+            if not response or not hasattr(response, "hits") or not response.hits:
                 return []
 
-            hits = response.get("hits", [])
             results = []
+            for hit in response.hits:
+                # Extract data from official client response
+                title = hit.title if hasattr(hit, "title") else ""
+                authors = []
+                if hasattr(hit, "names") and hit.names:
+                    authors = [
+                        author.full_name
+                        for author in hit.names
+                        if hasattr(author, "full_name")
+                    ]
 
-            for hit in hits:
+                year = str(hit.year) if hasattr(hit, "year") else ""
+                doi = (
+                    hit.identifiers.doi
+                    if hasattr(hit, "identifiers")
+                    and hasattr(hit.identifiers, "doi")
+                    else ""
+                )
+                uid = hit.uid if hasattr(hit, "uid") else ""
+
+                # Extract citations
+                citations = 0
+                if hasattr(hit, "citations") and hit.citations:
+                    try:
+                        for citation in hit.citations:
+                            if hasattr(citation, "count"):
+                                citations = int(citation.count)
+                                break
+                    except (ValueError, TypeError):
+                        citations = 0
+
                 result = {
-                    "title": hit.get("title", ""),
-                    "authors": [
-                        author.get("full_name", "")
-                        for author in hit.get("authors", [])
-                    ],
-                    "year": str(hit.get("year", "")),
-                    "doi": hit.get("identifiers", {}).get("doi", ""),
-                    "abstract": hit.get("abstract", ""),
+                    "title": title,
+                    "authors": authors,
+                    "year": year,
+                    "doi": doi,
+                    "abstract": "",  # Not in Starter API
                     "source": "WoS",
-                    "citations": hit.get("citations", {})
-                    .get("tc_list", {})
-                    .get("silo_tc", {})
-                    .get("local_count", 0),
-                    "url": f"https://www.webofscience.com/wos/woscc/full-record/{hit.get('uid', '')}",
+                    "citations": citations,
+                    "url": f"https://www.webofscience.com/wos/woscc/full-record/{uid}",
                 }
                 results.append(result)
 
             return results
 
+        except ApiException as e:
+            if e.status == 401:
+                print(
+                    "[WoS] Authentication failed: Invalid API key or expired token"
+                )
+            else:
+                print(
+                    f"[WoS] API error (status {e.status}): {e.reason if hasattr(e, 'reason') else str(e)}"
+                )
+            return []
         except Exception as e:
             print(f"[WoS] Error during search: {e}")
             return []
