@@ -42,11 +42,14 @@ load_dotenv()
 class BibliometricCrawler:
     """Main orchestrator for bibliometric data crawling"""
 
-    def __init__(self, groq_model: str = None):
+    def __init__(self, groq_model: str = None, cache_dir: str = ".cache", cache_ttl: int = 3600, max_workers: int = 8):
         """Initialize the crawler with API keys and crawlers
 
         Args:
             groq_model: The Groq AI model to use (default: from env or llama-3.1-70b-versatile)
+            cache_dir: directory to store integration/validation caches
+            cache_ttl: time-to-live (seconds) for cached validation results
+            max_workers: default number of threads for parallel operations
         """
         groq_api_key = os.getenv("GROQ_API_KEY")
         if not groq_api_key:
@@ -60,15 +63,25 @@ class BibliometricCrawler:
             "GROQ_MODEL", "llama-3.1-70b-versatile"
         )
 
+        # Integration configuration
+        self.cache_dir = cache_dir
+        self.cache_ttl = cache_ttl
+        self.max_workers = max_workers
+
         # Initialize all crawlers
+        # Support shared API keys: NCBI (PubMed/PubChem/Gene/Genome) and Elsevier (Scopus/ScienceDirect)
+        pubmed_key = os.getenv("PUBMED_API_KEY")
+        elsevier_key = os.getenv("SCOPUS_API_KEY") or os.getenv("SCIENCEDIRECT_API_KEY")
+        shared_ncbi_key = pubmed_key or os.getenv("PUBCHEM_API_KEY") or os.getenv("GENE_API_KEY") or os.getenv("GENOME_API_KEY")
+
         self.crawlers = {
             "wos": WoSCrawler(os.getenv("WOS_API_KEY")),
-            "scopus": ScopusCrawler(os.getenv("SCOPUS_API_KEY")),
-            "sciencedirect": ScienceDirectCrawler(os.getenv("SCIENCEDIRECT_API_KEY")),
-            "pubmed": PubMedCrawler(os.getenv("PUBMED_API_KEY")),
-            "pubchem": PubChemCrawler(os.getenv("PUBCHEM_API_KEY")),
-            "gene": GeneCrawler(os.getenv("GENE_API_KEY")),
-            "genome": GenomeCrawler(os.getenv("GENOME_API_KEY")),
+            "scopus": ScopusCrawler(elsevier_key),
+            "sciencedirect": ScienceDirectCrawler(elsevier_key),
+            "pubmed": PubMedCrawler(shared_ncbi_key or pubmed_key),
+            "pubchem": PubChemCrawler(shared_ncbi_key),
+            "gene": GeneCrawler(shared_ncbi_key),
+            "genome": GenomeCrawler(shared_ncbi_key),
             "sage": SAGECrawler(os.getenv("SAGE_API_KEY")),
             "ieee": IEEECrawler(os.getenv("IEEE_API_KEY")),
             "eric": ERICCrawler(os.getenv("ERIC_API_KEY")),
@@ -76,6 +89,163 @@ class BibliometricCrawler:
             "ebsco": EBSCOCrawler(os.getenv("EBSCO_API_KEY")),
             "wiley": WileyCrawler(os.getenv("WILEY_API_KEY")),
         }
+
+        # Registry for optional provider token-scope probes. Attach callables that accept (crawler) and return dict of scopes/info.
+        # Example: self.register_scope_probe('scopus', lambda c: {'scopes': ['search']})
+        self.scope_probes = {}
+
+    def register_scope_probe(self, provider_name: str, probe_callable) -> None:
+        """Register a callable to probe a provider for token scope or metadata.
+
+        The callable receives the crawler instance and should return a dict (e.g., {'scopes': [...]}) or None.
+        """
+        self.scope_probes[provider_name] = probe_callable
+
+    def check_api_keys(self) -> Dict[str, Dict[str, object]]:
+        """Return a dict describing which crawler API keys are present in the current environment.
+
+        The returned mapping has the shape:
+            { crawler_name: {"env": ENV_VAR_NAME, "present": bool, "value": str|None } }
+        """
+        mapping = {
+            "wos": "WOS_API_KEY",
+            "scopus": "SCOPUS_API_KEY",
+            "sciencedirect": "SCIENCEDIRECT_API_KEY",
+            "pubmed": "PUBMED_API_KEY",
+            "pubchem": "PUBCHEM_API_KEY",
+            "gene": "GENE_API_KEY",
+            "genome": "GENOME_API_KEY",
+            "sage": "SAGE_API_KEY",
+            "ieee": "IEEE_API_KEY",
+            "eric": "ERIC_API_KEY",
+            "springer": "SPRINGER_API_KEY",
+            "ebsco": "EBSCO_API_KEY",
+            "wiley": "WILEY_API_KEY",
+        }
+        result: Dict[str, Dict[str, object]] = {}
+        for name, env_var in mapping.items():
+            val = os.getenv(env_var)
+            result[name] = {"env": env_var, "present": bool(val), "value": val}
+        return result
+
+    def get_missing_api_keys(self) -> Dict[str, str]:
+        """Return a mapping of crawler_name -> env_var for missing keys."""
+        missing = {name: info["env"] for name, info in self.check_api_keys().items() if not info["present"]}
+        return missing
+
+    def get_effective_api_keys(self) -> Dict[str, Optional[str]]:
+        """Return the effective API key string in use by each crawler instance (after shared-key fallback)."""
+        return {name: (crawler.api_key if crawler.api_key else None) for name, crawler in self.crawlers.items()}
+
+    def _cache_path(self) -> str:
+        import os
+        return os.path.join(self.cache_dir, "validation_cache.json")
+
+    def _load_validation_cache(self) -> Dict[str, object]:
+        import os, json, time
+        path = self._cache_path()
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                cached = json.load(fh)
+            # expire by timestamp
+            ts = cached.get("timestamp", 0)
+            if time.time() - ts > self.cache_ttl:
+                return {}
+            return cached.get("results", {})
+        except Exception:
+            return {}
+
+    def _save_validation_cache(self, results: Dict[str, object]) -> None:
+        import os, json, time
+        try:
+            os.makedirs(self.cache_dir, exist_ok=True)
+            with open(self._cache_path(), "w", encoding="utf-8") as fh:
+                json.dump({"timestamp": int(time.time()), "results": results}, fh)
+        except Exception:
+            # swallow cache errors (non-critical)
+            pass
+
+    def validate_keys(self, timeout: int = 10, invalidate_cache: bool = False, parallel: bool = True) -> Dict[str, Dict[str, object]]:
+        """Validate API keys by performing a lightweight probe for each configured crawler.
+
+        Features:
+        - Caches results to disk (TTL controlled by `cache_ttl`)
+        - Can invalidate cache with `invalidate_cache=True`
+        - Runs probes in parallel using ThreadPoolExecutor when `parallel=True`
+
+        Returns a mapping: { crawler_name: {"ok": bool, "status": int|None, "message": str } }
+        """
+        import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        if not invalidate_cache:
+            cached = self._load_validation_cache()
+            if cached:
+                return cached
+
+        results: Dict[str, Dict[str, object]] = {}
+
+        def _probe(name, crawler):
+            info = {"ok": None, "status": None, "message": ""}
+            try:
+                probe_resp = None
+                try:
+                    if hasattr(crawler, "search"):
+                        _ = crawler.search("test", max_results=1)
+                        probe_resp = True
+                    else:
+                        probe_resp = crawler._make_request("", params={}, method="GET")
+                except Exception as probe_exc:
+                    try:
+                        from requests.exceptions import HTTPError
+
+                        if isinstance(probe_exc, HTTPError) and getattr(probe_exc, "response", None):
+                            info["status"] = getattr(probe_exc.response, "status_code", None)
+                            info["message"] = getattr(probe_exc.response, "text", str(probe_exc))
+                        else:
+                            info["message"] = str(probe_exc)
+                    except Exception:
+                        info["message"] = str(probe_exc)
+                    info["ok"] = False
+                    return name, info
+
+                if probe_resp:
+                    info["ok"] = True
+                    info["message"] = "OK"
+                    # Optionally run a registered scope probe for more information
+                    sp = self.scope_probes.get(name)
+                    if sp:
+                        try:
+                            info["scopes"] = sp(crawler) or {}
+                        except Exception as es:
+                            info["scopes"] = {"error": str(es)}
+                else:
+                    info["ok"] = False
+                    info["message"] = "Empty response from probe"
+
+            except Exception as e:
+                info["ok"] = False
+                info["message"] = str(e)
+
+            return name, info
+
+        if parallel:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+                futures = {ex.submit(_probe, name, crawler): name for name, crawler in self.crawlers.items()}
+                for fut in as_completed(futures):
+                    name, info = fut.result()
+                    results[name] = info
+        else:
+            for name, crawler in self.crawlers.items():
+                name, info = _probe(name, crawler)
+                results[name] = info
+
+        # save cache
+        self._save_validation_cache(results)
+
+        return results
 
     def _select_and_set_fallback_groq_model(self) -> Optional[str]:
         """
@@ -224,6 +394,38 @@ class BibliometricCrawler:
                         except Exception as e2:
                             print(f"[Groq] Retry with fallback model {self.groq_model} failed: {e2}")
 
+            # Try Cloudflare AI as an AI-only fallback (preferred over other third-party fallbacks)
+            cf_endpoint = os.getenv("CLOUDFLARE_AI_ENDPOINT")
+            cf_token = os.getenv("CLOUDFLARE_API_TOKEN")
+            if cf_endpoint and cf_token:
+                try:
+                    import requests
+
+                    headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
+                    payload = {"messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_query}], "model": os.getenv("CLOUDFLARE_MODEL", "gpt-4o")}
+                    r = requests.post(cf_endpoint, headers=headers, json=payload, timeout=30)
+                    r.raise_for_status()
+                    resp_json = r.json()
+                    cf_text = None
+                    try:
+                        cf_text = resp_json.get("choices", [])[0].get("message", {}).get("content")
+                    except Exception:
+                        cf_text = resp_json.get("text") or str(resp_json)
+                    if cf_text:
+                        if "```json" in cf_text:
+                            json_start = cf_text.find("```json") + 7
+                            json_end = cf_text.find("```", json_start)
+                            cf_text = cf_text[json_start:json_end]
+                        elif "```" in cf_text:
+                            json_start = cf_text.find("```") + 3
+                            json_end = cf_text.find("```", json_start)
+                            cf_text = cf_text[json_start:json_end]
+                        analysis = json.loads(cf_text.strip())
+                        analysis["_ai_provider"] = {"provider": "cloudflare", "model": os.getenv("CLOUDFLARE_MODEL", "gpt-4o")}
+                        return analysis
+                except Exception as ecf:
+                    print(f"[Cloudflare AI] Fallback failed: {ecf}")
+
             # Attempt Cerebras fallback if available and the user has provided a key
             if CEREBRAS_AVAILABLE and os.getenv("CEREBRAS_API_KEY"):
                 try:
@@ -272,38 +474,6 @@ class BibliometricCrawler:
                 except Exception as ecb:
                     print(f"[Cerebras] Fallback failed: {ecb}")
 
-            # Try Cloudflare AI as an AI-only fallback
-            cf_endpoint = os.getenv("CLOUDFLARE_AI_ENDPOINT")
-            cf_token = os.getenv("CLOUDFLARE_API_TOKEN")
-            if cf_endpoint and cf_token:
-                try:
-                    import requests
-
-                    headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
-                    payload = {"messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_query}], "model": os.getenv("CLOUDFLARE_MODEL", "gpt-4o")}
-                    r = requests.post(cf_endpoint, headers=headers, json=payload, timeout=30)
-                    r.raise_for_status()
-                    resp_json = r.json()
-                    cf_text = None
-                    try:
-                        cf_text = resp_json.get("choices", [])[0].get("message", {}).get("content")
-                    except Exception:
-                        cf_text = resp_json.get("text") or str(resp_json)
-                    if cf_text:
-                        if "```json" in cf_text:
-                            json_start = cf_text.find("```json") + 7
-                            json_end = cf_text.find("```", json_start)
-                            cf_text = cf_text[json_start:json_end]
-                        elif "```" in cf_text:
-                            json_start = cf_text.find("```") + 3
-                            json_end = cf_text.find("```", json_start)
-                            cf_text = cf_text[json_start:json_end]
-                        analysis = json.loads(cf_text.strip())
-                        analysis["_ai_provider"] = {"provider": "cloudflare", "model": os.getenv("CLOUDFLARE_MODEL", "gpt-4o")}
-                        return analysis
-                except Exception as ecf:
-                    print(f"[Cloudflare AI] Fallback failed: {ecf}")
-
             # No non-AI fallback allowed — raise an explicit error indicating AI failure
             raise RuntimeError(f"AI providers failed to produce analysis: {last_exc}") from last_exc
 
@@ -322,20 +492,38 @@ class BibliometricCrawler:
         print(f"\nCrawling {len(databases)} databases for: {search_terms}")
         print("=" * 60)
 
+        # Optionally perform searches concurrently across databases and term variations
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        tasks = []  # (future -> (db_name, term)) when using executor
+        # Helper function to run a single search and return (db_name, results)
+        def _search_one(db_name, crawler, term):
+            try:
+                return db_name, crawler.search(term, max_results)
+            except Exception as e:
+                print(f"Error crawling {db_name} for '{term}': {e}")
+                return db_name, []
+
+        # Use ThreadPoolExecutor to parallelize IO-bound search operations
+        with ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+            futures = []
+            for db_name in databases:
+                if db_name in self.crawlers:
+                    crawler = self.crawlers[db_name]
+                    for term in search_terms:
+                        futures.append(ex.submit(_search_one, db_name, crawler, term))
+
+            # Collect as they complete
+            interim: Dict[str, List[Dict[str, Any]]] = {db_name: [] for db_name in databases}
+            for fut in as_completed(futures):
+                db_name, term_results = fut.result()
+                if db_name in interim:
+                    interim[db_name].extend(term_results)
+
+        # Assign results for dbs we searched
         for db_name in databases:
-            if db_name in self.crawlers:
-                crawler = self.crawlers[db_name]
-                db_results = []
-
-                # Search with each term variation
-                for term in search_terms:
-                    try:
-                        term_results = crawler.search(term, max_results)
-                        db_results.extend(term_results)
-                    except Exception as e:
-                        print(f"Error crawling {db_name} for '{term}': {e}")
-
-                results[db_name] = db_results
+            if db_name in interim:
+                results[db_name] = interim.get(db_name, [])
 
         return results
 
@@ -631,6 +819,30 @@ def main():
         return
 
     # Get user query
+    # Support quick validation flag for CI/diagnostics: `--validate-keys`
+    import sys
+    # Validate keys CLI support: --validate-keys [--invalidate-cache] [--max-workers N]
+    if "--validate-keys" in sys.argv:
+        invalidate = "--invalidate-cache" in sys.argv
+        # optional max workers override
+        maxw = None
+        if "--max-workers" in sys.argv:
+            try:
+                idx = sys.argv.index("--max-workers")
+                maxw = int(sys.argv[idx + 1])
+                crawler.max_workers = maxw
+            except Exception:
+                pass
+
+        print("Validating configured API keys (this may perform small probe requests)...")
+        v = crawler.validate_keys(invalidate_cache=invalidate)
+        print("\nKey validation results:")
+        for k, info in v.items():
+            status = "OK" if info.get("ok") else f"INVALID (status={info.get('status')})"
+            msg = info.get("message", "")
+            print(f" - {k}: {status} - {msg}")
+        return
+
     print("\nEnter your research query (or 'quit' to exit):")
     while True:
         user_query = input("\n> ").strip()

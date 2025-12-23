@@ -49,6 +49,9 @@ except Exception:
 class BaseCrawler(ABC):
     """Base class for all academic database crawlers"""
 
+    # Subclasses may set the associated environment variable name for better diagnostics
+    env_var: Optional[str] = None
+
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key
         self.base_url = ""
@@ -124,13 +127,21 @@ class BaseCrawler(ABC):
             except requests.exceptions.HTTPError as e:
                 # For HTTP errors, check status. Do not retry on 4xx (client) errors.
                 status = None
+                resp_text = None
                 try:
                     status = e.response.status_code
+                    resp_text = e.response.text
                 except Exception:
                     pass
                 if status and 400 <= status < 500:
+                    # Provide enhanced diagnostics for auth/client errors
+                    env_info = None
+                    if getattr(self, "env_var", None):
+                        env_info = (getattr(self, "env_var"), bool(os.getenv(getattr(self, "env_var"))))
                     print(
-                        f"[{self.__class__.__name__}] HTTP error (status {status}): {e}"
+                        f"[{self.__class__.__name__}] HTTP error (status {status}): {e}."
+                        + (f" Env var {env_info[0]} present: {env_info[1]}." if env_info else "")
+                        + (f" Response: {resp_text[:200]}" if resp_text else "")
                     )
                     return {}
                 last_exc = e
@@ -175,6 +186,8 @@ class WoSCrawler(BaseCrawler):
 
     API Documentation: https://api.clarivate.com/swagger-ui/?apikey=none&url=https%3A%2F%2Fdeveloper.clarivate.com%2Fapis%2Fwos%2Fswagger
     """
+
+    env_var = "WOS_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
@@ -263,6 +276,8 @@ class ScopusCrawler(BaseCrawler):
     API Documentation: https://dev.elsevier.com/technical_documentation.html
     """
 
+    env_var = "SCOPUS_API_KEY"
+
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
         self.base_url = "https://api.elsevier.com/content/search/scopus"
@@ -341,6 +356,8 @@ class ScienceDirectCrawler(BaseCrawler):
     API Documentation: https://dev.elsevier.com/technical_documentation.html
     """
 
+    env_var = "SCIENCEDIRECT_API_KEY"
+
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
         self.base_url = "https://api.elsevier.com/content/search/sciencedirect"
@@ -414,6 +431,8 @@ class PubMedCrawler(BaseCrawler):
 
     API Documentation: https://www.ncbi.nlm.nih.gov/home/develop/api/
     """
+
+    env_var = "PUBMED_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
@@ -640,7 +659,10 @@ class PubChemCrawler(BaseCrawler):
     API Documentation: https://www.ncbi.nlm.nih.gov/home/develop/api/
     """
 
+    env_var = "PUBCHEM_API_KEY"
+
     def __init__(self, api_key: Optional[str] = None):
+        # PubChem typically does not need an API key (public data) but we accept one if provided
         super().__init__(api_key)
         self.base_url = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/"
         self.requests_per_second = 5
@@ -742,6 +764,8 @@ class GeneCrawler(BaseCrawler):
 
     API Documentation: https://www.ncbi.nlm.nih.gov/home/develop/api/
     """
+
+    env_var = "GENE_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)
@@ -907,6 +931,8 @@ class GenomeCrawler(BaseCrawler):
 
     API Documentation: https://www.ncbi.nlm.nih.gov/home/develop/api/
     """
+
+    env_var = "GENOME_API_KEY"
 
     def __init__(self, api_key: Optional[str] = None):
         super().__init__(api_key)

@@ -1,403 +1,148 @@
-# Simple-bibliometric
+# Simple-bibliometric — v1.0.0 (Just released)
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+Simple-bibliometric is a compact, production-minded bibliometric crawler and analysis pipeline that ships with improved AI integration, key-validation diagnostics, and fast concurrent crawling.
 
-A production-ready bibliometric data crawler powered by Groq AI that searches across multiple academic databases and intelligently filters and normalizes results. Perfect for researchers, data scientists, and academic institutions conducting comprehensive literature reviews and bibliometric analysis.
+What’s new in this release
+- ✅ Groq AI as primary query analyzer with intelligent fallbacks
+- ✅ Integration mode: validate API keys with cached probe results and TTL
+- ✅ Parallelized crawling (configurable `max_workers`) for fast real-world performance
+- ✅ Tools for diagnostics: `tools/verify_scopes.py` and `tools/perf_benchmark.py`
+- ✅ Cleanup and streamlined repository layout
 
-## ✨ Features
+---
 
-## 📑 Table of Contents
+A lightweight bibliometric crawler and analysis pipeline with AI-powered query analysis and filtering. Designed for experiments and small deployments; production-ready features include job queues, caching, and configurable data source integrations.
 
-- [Features](#-features)
-- [Quick Start](#-quick-start)
-- [Installation](#-installation)
-- [Configuration](#-configuration)
-- [Usage](#-usage)
-  - [Command Line Interface](#command-line-interface)
-  - [Interactive Dashboard (Streamlit)](#interactive-dashboard-streamlit)
-  - [API Server (FastAPI)](#api-server-fastapi)
-  - [Programmatic Usage](#programmatic-usage)
-- [Architecture](#architecture)
-- [API Implementation Status](#api-implementation-status)
-- [Production Deployment](#-production-deployment)
-- [Testing](#-testing)
-- [Troubleshooting](#-troubleshooting)
-- [Security Best Practices](#-security-best-practices)
-- [Contributing](#-contributing)
-- [License](#license)
-- [Support](#support)
+## Key features
+- Groq AI for query analysis (primary), with optional fallbacks (Cerebras, Cloudflare)
+- Crawls multiple academic sources (PubMed, Scopus, WoS, Springer, etc.)
+- Shared API-key fallbacks (NCBI and Elsevier families) to simplify configuration
+- Validation mode for API keys with disk caching and TTL
+- Concurrent crawling (ThreadPoolExecutor) for better throughput
+- CLI, Streamlit dashboard, and FastAPI server interfaces
 
-## 🚀 Quick Start
+---
 
-```bash
-# Clone and install
-git clone https://github.com/rqzbeh/Simple-bibliometric.git
-cd Simple-bibliometric
-pip install -r requirements.txt
+## Quick start
 
-# Configure (minimum: GROQ_API_KEY required)
-cp .env.example .env
-# Edit .env and add your Groq API key
-
-# Run the Streamlit dashboard
-streamlit run app.py
-
-# Or use the CLI
-python bibliometric_crawler.py
-
-# Or start the API server
-uvicorn api:app --reload
-```
-
-## ✨ Features
-
-### Core Capabilities
-- **🤖 AI-Powered Query Analysis**: Uses Groq AI as the primary provider, with optional fallbacks to Cerebras and Cloudflare. The pipeline enforces an AI-only policy and will raise an error if no AI provider returns a valid JSON analysis.
-- **📚 Multi-Database Support**: Crawls data from 13 academic sources with **actual API implementations**:
-  - Web of Science (WoS) - Clarivate API
-  - Scopus - Elsevier API
-  - ScienceDirect - Elsevier API
-  - PubMed - NCBI E-utilities
-  - PubChem - NCBI PUG REST API
-  - NCBI Gene - NCBI E-utilities
-  - NCBI Genome - NCBI E-utilities
-  - SAGE Journals - CrossRef API
-  - IEEE Xplore - IEEE API
-  - ERIC - IES API
-  - Springer - Springer Nature API
-  - EBSCO - EBSCO API (requires OAuth)
-  - Wiley Online Library - Wiley TDM API
-
-### Advanced Features
-- **🎯 Intelligent Data Filtering**: AI automatically identifies and combines similar results (e.g., "data mining" and "data-mining")
-- **🔄 Result Normalization**: Deduplicates entries across databases
-- **⚡ Rate Limiting**: Respects API rate limits for each source
-- **📊 Comprehensive Analytics**: Computes author-level metrics (h-index, g-index, citations)
-- **🌐 Network Visualization**: Interactive co-authorship network analysis with PyVis and GEXF export
-- **📈 Time Series Analysis**: Publication trends with ARIMA forecasting
-- **💾 Smart Caching**: Reduces API calls with configurable TTL-based caching
-- **🎨 Multiple Interfaces**: CLI, Streamlit dashboard, FastAPI server, and Flutter mobile UI
-- **🔒 Production Ready**: Background job queue with RQ/Redis support for scalable deployments
-- **📤 Multiple Export Formats**: CSV, JSON, BibTeX, and GEXF for Gephi/VOSviewer
-
-### Extensibility
-- **🔌 Extensible Architecture**: Easy to add new data sources
-- **📦 Package Integration**: Prefers Python packages (Biopython, pubchempy, habanero) when available to reduce API key requirements
-- **🛡️ Automatic Fallbacks**: Groq model auto-selection and Cerebras fallback for reliability
-
-## 📦 Installation
-
-### Prerequisites
-
-- Python 3.8 or higher
-- pip package manager
-- (Optional) Redis server for production job queue
-- (Optional) C compiler for `fa2` package (better network layouts)
-
-### Standard Installation
-
-1. **Clone the repository:**
+1. Clone and create a venv:
 ```bash
 git clone https://github.com/rqzbeh/Simple-bibliometric.git
 cd Simple-bibliometric
-```
-
-2. **Create a virtual environment (recommended):**
-```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. **Install dependencies:**
-```bash
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Optional Dependencies
-
-**ForceAtlas2 Layout (better network visualization):**
-```bash
-# Requires C compiler and Python dev headers
-# Ubuntu/Debian: sudo apt-get install build-essential python3-dev
-# macOS: xcode-select --install
-pip install fa2
-
-# Or use the optional requirements file:
-pip install -r requirements-optional.txt
-```
-**Note:** If `fa2` fails to install, the app will automatically fall back to NetworkX's spring layout. This is normal on some platforms.
-
-**RQ for Production Job Queue:**
-```bash
-pip install rq redis
-```
-
-**Development Tools:**
-```bash
-pip install pytest flake8 black mypy
-```
-
-### Docker Installation (Alternative)
-
-```bash
-docker build -t simple-bibliometric .
-docker run -p 8501:8501 -p 8000:8000 --env-file .env simple-bibliometric
-```
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-Create a `.env` file in the project root (copy from `.env.example`):
-
+2. Copy `.env.example` and set `GROQ_API_KEY` at minimum:
 ```bash
 cp .env.example .env
+# edit .env and add your GROQ_API_KEY
 ```
 
-### Required Configuration
-
-```env
-# REQUIRED: Groq API key for AI-powered analysis
-GROQ_API_KEY=your_groq_api_key_here
-
-# OPTIONAL: Specify Groq model (auto-selected if not set)
-GROQ_MODEL=llama-3.3-70b-versatile
-```
-
-**Get your Groq API key:** https://console.groq.com/
-
-### Optional API Keys
-
-For access to premium databases and higher rate limits:
-
-```env
-# NCBI Services (optional - works without keys via public APIs)
-NCBI_EMAIL=your_email@example.com  # Recommended by NCBI
-PUBMED_API_KEY=your_key_here
-GENE_API_KEY=your_key_here
-GENOME_API_KEY=your_key_here
-PUBCHEM_API_KEY=your_key_here
-
-# Premium Database APIs (require registration)
-WOS_API_KEY=your_wos_key            # Web of Science
-SCOPUS_API_KEY=your_scopus_key      # Scopus
-SCIENCEDIRECT_API_KEY=your_key      # ScienceDirect
-IEEE_API_KEY=your_ieee_key          # IEEE Xplore
-SPRINGER_API_KEY=your_springer_key  # Springer Nature
-EBSCO_API_KEY=your_ebsco_key        # EBSCO
-WILEY_API_KEY=your_wiley_key        # Wiley
-
-# Cerebras Fallback (optional)
-CEREBRAS_API_KEY=your_cerebras_key
-CEREBRAS_MODEL=llama-3.3-70b
-
-# Cloudflare AI (optional fallback)
-# If Groq fails, the crawler can optionally call Cloudflare's AI endpoint as a secondary AI-only fallback.
-CLOUDFLARE_API_TOKEN=your_cloudflare_token
-CLOUDFLARE_AI_ENDPOINT=https://api.cloudflare.com/your/endpoint
-CLOUDFLARE_MODEL=gpt-4o
-
-# AI-only behavior
-# The pipeline enforces an AI-only analysis and filtering policy: Groq is required as the primary provider, and Cerebras/Cloudflare are
-# optional fallbacks. The system will raise an explicit error if no AI provider returns valid JSON analysis or filtering guidance.
-```
-
-### Production Configuration
-
-```env
-# Logging
-LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
-
-# Job Queue (for production deployments)
-BIB_USE_RQ=1                           # Enable RQ backend
-REDIS_URL=redis://localhost:6379/0     # Redis connection
-BIB_JOB_OUTPUT_DIR=/var/lib/bib-jobs  # Job output directory
-
-# Caching
-DEFAULT_MAX_RESULTS=100
-CACHE_TTL_HOURS=24
-```
-
-### API Key Registration Links
-
-| Database | Required | Registration Link |
-|----------|----------|-------------------|
-| Groq AI | ✅ Yes | https://console.groq.com/ |
-| PubMed | ⚪ Optional* | https://www.ncbi.nlm.nih.gov/account/ |
-| ERIC | ⚪ No | N/A (Public API) |
-| SAGE | ⚪ No | N/A (uses CrossRef) |
-| Web of Science | 🔑 Yes | https://developer.clarivate.com/ |
-| Scopus | 🔑 Yes | https://dev.elsevier.com/ |
-| ScienceDirect | 🔑 Yes | https://dev.elsevier.com/ |
-| IEEE Xplore | 🔑 Yes | https://developer.ieee.org/ |
-| Springer | 🔑 Yes | https://dev.springernature.com/ |
-| EBSCO | 🔑 Yes | https://connect.ebsco.com/ |
-| Wiley | 🔑 Yes | https://onlinelibrary.wiley.com/ |
-| Cerebras | ⚪ Optional | https://cerebras.ai/ |
-
-*Optional but recommended for higher rate limits
-
-## Usage
-
-### Command Line Interface
-
-Run the interactive CLI:
-
+3. Run a sample interactive query:
 ```bash
 python bibliometric_crawler.py
+# or run a one-shot validation check:
+python bibliometric_crawler.py --validate-keys
+# to invalidate cache and re-check:
+python bibliometric_crawler.py --validate-keys --invalidate-cache
 ```
 
-Then enter your research query:
+---
+
+## Configuration & environment variables
+- REQUIRED: `GROQ_API_KEY`
+- Optional keys (examples): `PUBMED_API_KEY`, `SCOPUS_API_KEY`, `WOS_API_KEY`, `SCIENCEDIRECT_API_KEY`, `SPRINGER_API_KEY`, `IEEE_API_KEY`.
+
+Notes:
+- NCBI family (PubMed, PubChem, Gene, Genome) support a shared key: setting `PUBMED_API_KEY` will be used as a fallback for the others.
+- Elsevier family (Scopus, ScienceDirect) can share `SCOPUS_API_KEY` / `SCIENCEDIRECT_API_KEY`.
+- Some providers do not require keys for public endpoints (e.g., parts of NCBI), and others require institutional or scoped keys.
+
+---
+
+## Validation mode (integration)
+- Run `python bibliometric_crawler.py --validate-keys` to perform lightweight probes against each configured source.
+- Results are cached to `.cache/validation_cache.json` with a TTL (default 1 hour). Use `--invalidate-cache` to force revalidation.
+- Validation runs are parallelized for speed.
+
+Example output:
 ```
-> machine learning in healthcare
+Validating configured API keys (this may perform small probe requests)...
+ - pubmed: OK - OK
+ - scopus: INVALID (status=401) - {"error-response":{...}}
 ```
 
-### Interactive Dashboard (Streamlit)
+---
 
-For a guided, interactive experience (visualization, layout tuning, filtering and export), use the Streamlit dashboard.
+## Performance & concurrency
+- Crawling and validation probes run with a `ThreadPoolExecutor` (IO-bound parallelism).
+- Control parallelism via the `max_workers` argument when constructing `BibliometricCrawler` or `--max-workers` flag in CLI validation mode.
 
-1. Install dependencies (including optional extras for better layouts / visuals):
+---
+
+## Running tests
 ```bash
 pip install -r requirements.txt
-# Optional: ForceAtlas2 layout (recommended for large networks)
-pip install fa2
+pytest
 ```
 
-Note: On some platforms `fa2` may require compilation support (C compiler / build tools). If `fa2` cannot be installed, the dashboard will automatically fall back to NetworkX's spring layout.
+---
 
-2. Start the Streamlit app from the project root:
+## VPS Installation Guide (Ubuntu)
+1. Create a server and connect (Ubuntu 22.04+ recommended)
+2. Update packages and install system deps:
 ```bash
-streamlit run app.py
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y python3 python3-venv python3-pip git build-essential
 ```
-or explicitly:
+3. Clone & set up project:
 ```bash
-streamlit run Simple-bibliometric/app.py
-```
-
-3. In the dashboard:
-- Enter a query in the sidebar and click "Run analysis" to fetch publications and compute author metrics.
-- Inspect top authors, publication trends, and forecasts.
-- Use the "Interactive exploration" controls to:
-  - Set a minimum-publications threshold to filter authors,
-  - Search for author names (substring match),
-  - Choose a layout method ("Auto" will use ForceAtlas2 if installed; otherwise it falls back to spring),
-  - Adjust iteration counts for ForceAtlas2 / spring layouts,
-  - Click "Generate interactive network" to render an embedded pyvis visualization.
-- Download filtered GEXF files for use in Gephi or VOSviewer.
-
-- Exports & downloads:
-  - Use the "Exports" section to download the full publications list as CSV, JSON, or BibTeX.
-  - Download the top authors table as CSV (available next to the table).
-  - Export filtered graphs in GEXF format for import into Gephi / VOSviewer.
-
-- Caching & performance:
-  - Use the "Use cached search results" checkbox in the sidebar to avoid duplicate API calls for repeated queries (this reduces API usage and speeds up exploration).
-  - Set "Cache TTL (hours)" to control how long cached results are considered fresh (default: 24 hours).
-  - To clear the cache manually, delete files in the `.cache/` directory, or call `cache_utils.clear_cache()` programmatically.
-
-### API Server (FastAPI)
-
-A small FastAPI-based API is included to make the analysis pipeline available to external UIs (e.g., a Flutter app) and other programmatic consumers.
-
-Quick start:
-```bash
-# install dependencies (additions include fastapi and uvicorn)
+git clone https://github.com/rqzbeh/Simple-bibliometric.git
+cd Simple-bibliometric
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-
-# run the API server locally
-uvicorn api:app --reload --port 8000
 ```
-
-Synchronous analysis (simple):
-- URL: `http://localhost:8000/analyze`
-- Method: POST
-- Body (JSON):
-```json
-{
-  "query": "machine learning in healthcare",
-  "max_results": 200,
-  "sources": ["pubmed", "sage"],
-  "use_cache": true,
-  "cache_ttl_hours": 24
-}
-```
-- Response (JSON) — a summarized, JSON-friendly payload:
-  - `n_publications`: integer
-  - `top_authors`: list of author summaries (name, n_publications, total_citations, h_index)
-  - `time_series`, `forecast`: timeseries and forecast objects
-  - `graph_summary`: lightweight graph info (n_nodes, n_edges, sample degrees)
-  - `exports`: paths to generated artifacts (GEXF/pyvis HTML) when available
-  - `source_errors`: list of (source, error) tuples for any sources that failed during crawling
-
-Asynchronous jobs (recommended for long-running analyses):
-To avoid blocking HTTP responses for heavy/long analyses, a background job queue is available. Use the async endpoints to enqueue work and poll for completion.
-
-1) Enqueue an async analysis:
-- POST `http://localhost:8000/analyze_async`
-- Request body: same JSON shape as `/analyze` (query, max_results, sources, use_cache, cache_ttl_hours)
-- Response:
-```json
-{ "job_id": "abcdef123456..." }
-```
-
-Example:
+4. Configure environment variables (use a secure file `/etc/simple-bibliometric.env` or systemd unit `EnvironmentFile=`):
 ```bash
-curl -X POST http://localhost:8000/analyze_async \
-  -H "Content-Type: application/json" \
-  -d '{"query":"machine learning in healthcare","max_results":200}'
+# Example: /etc/simple-bibliometric.env
+GROQ_API_KEY=your_groq_key
+SCOPUS_API_KEY=your_scopus_key
+# restrict permissions
+sudo chown root:root /etc/simple-bibliometric.env
+sudo chmod 600 /etc/simple-bibliometric.env
 ```
-
-2) Poll job status:
-- GET `http://localhost:8000/jobs/{job_id}`
-- Response (example):
-```json
-{
-  "id": "abcdef123456",
-  "status": "queued|running|finished|failed",
-  "created_at": "2025-12-14T19:00:00Z",
-  "started_at": "2025-12-14T19:00:05Z",
-  "finished_at": "2025-12-14T19:03:12Z",
-  "error": null,
-  "has_result": true
-}
+5. (Optional) Configure systemd service (see `deployment/bibliometric-api.service` and `deployment/bibliometric-worker@.service` for examples). Enable and start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now bibliometric-api.service
+sudo systemctl enable --now bibliometric-worker@default.service
 ```
+6. Monitor logs with `journalctl -u bibliometric-api -f` or `systemctl status bibliometric-api`.
 
-3) Fetch job result:
-- GET `http://localhost:8000/jobs/{job_id}/result`
-- If job is not finished, the endpoint returns `202 Accepted` with current job status.
-- If job finished successfully, the endpoint returns `200 OK` with the analysis summary (same JSON-friendly format as the synchronous `/analyze` response).
+---
 
-Notes and recommendations:
-Background workers (RQ + Redis) and secure artifact downloads
-- For small experiments the built-in in-process job manager is convenient. For production you can enable an RQ/Redis worker for resilient, off-process job execution.
+## Repo cleanup proposal
+I can remove or archive files that are not needed in the canonical repo. Suggested candidates (please confirm before I delete):
+- `debug_crossref.py` (utility/debugging)
+- `example.py` (sample usage duplicates other scripts)
+- `full_crawl_test.py` (long-running integration test; keep in a tools folder if needed)
+- `scripts/run_sample_query.py` (move to examples/ or tools/)
 
-Quick steps to enable RQ:
-  1. Install & run Redis (the service that RQ uses as a broker/storage).
-     - Example local URL: `redis://localhost:6379/0`
-  2. Install the Python packages:
-     ```bash
-     pip install rq redis
-     ```
-  3. Configure environment variables:
-     ```bash
-     export BIB_USE_RQ=1
-     export REDIS_URL=redis://localhost:6379/0
-     # Optional: control where job outputs are written
-     export BIB_JOB_OUTPUT_DIR=/path/to/analysis_outputs
-     ```
-  4. Start a worker listening on the queue name used by the app (default: `simple-bib-queue`).
-     Run this from the project root (so the worker can import the `jobs` module):
-     ```bash
-     rq worker simple-bib-queue
-     ```
-     Or:
-     ```bash
-     python -m rq worker simple-bib-queue
-     ```
+I'll prepare a PR that removes the above files (or moves them to `tools/`) and documents the change in the PR description for review.
 
-How the async flow & downloads work
+---
+
+## Contributing
+Contributions welcome. Please open an issue to discuss larger changes and follow the included `CONTRIBUTING.md`.
+
+---
+
+## License
+MIT
+
 - Enqueue an async analysis:
   - `POST http://localhost:8000/analyze_async`
   - Body: same JSON as `/analyze` (query, max_results, sources, use_cache, cache_ttl_hours)
